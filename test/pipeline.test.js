@@ -75,3 +75,8 @@ test('rtfToText skips tables and keeps paragraphs and unicode', () => {
   const rtf = "{\\rtf1\\ansi{\\fonttbl\\f0 Times;}{\\colortbl;\\red0;}\\f0 Hello \\u8212? world\\par It\\'92s me\\\nNext}";
   assert.strictEqual(rtfToText(rtf).replace(/\n+/g, '|'), "Hello — world|It’s me|Next");
 });
+
+test('the student\'s prompt and context reach every reviewer', () => {
+  const msg = analyzerMessage({ ...input(), prompt: 'Why do you want to attend Brown?', wordCount: 60 });
+  assert.match(msg, /Application prompt and context from the student: Why do you want to attend Brown\?/);
+});

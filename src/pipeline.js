@@ -6,7 +6,7 @@ function describeContext({ type, prompt, college, wordLimit, wordCount }) {
     `Essay type: ${type.label}`,
     `Evaluation focus: ${type.focus}`,
     `Word limit: ${wordLimit}. This essay is ${wordCount} words${wordCount > wordLimit ? ` (${wordCount - wordLimit} OVER the limit)` : ''}.`,
-    `Application prompt: ${prompt || 'Not supplied. Proceed with reasonable assumptions and state them.'}`,
+    `Application prompt and context from the student: ${prompt || 'Not supplied. Proceed with reasonable assumptions and state them.'}`,
   ];
   if (college) lines.push(`Target college: ${college}`);
   return lines.join('\n');

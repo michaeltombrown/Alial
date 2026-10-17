@@ -58,7 +58,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
       essay,
       wordLimit,
       length: SUMMARY_LENGTHS[req.body.length] ? req.body.length : 'medium',
-      prompt: (req.body.prompt || '').trim().slice(0, 2000),
+      prompt: (req.body.prompt || '').trim().slice(0, 3000),
       college: (req.body.college || '').trim().slice(0, 200),
     };
   } catch (err) {

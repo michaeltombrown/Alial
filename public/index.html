@@ -35,8 +35,14 @@
             <p class="hint" id="type-hint"></p>
           </div>
 
+          <div class="field">
+            <label for="prompt">Question you are answering, or helpful context <span class="opt">(optional)</span></label>
+            <textarea id="prompt" name="prompt" rows="3" placeholder="e.g. &quot;Why do you want to attend Brown?&quot; or &quot;Describe a challenge you overcame.&quot; You can also add context, such as what you most want the essay to show."></textarea>
+          </div>
+
+          <label class="block-label" for="essay">Main essay</label>
           <div id="paste-box">
-            <textarea id="essay" name="essay" aria-label="Essay text" placeholder="Paste your essay here"></textarea>
+            <textarea id="essay" name="essay" placeholder="Paste your essay here, or upload a file below"></textarea>
           </div>
           <div id="file-chip" class="chip" hidden>
             <span id="file-name"></span>
@@ -55,11 +61,7 @@
           <p class="hint">Length applies to the summary. Word, PDF, text, or RTF uploads, 5 MB max.</p>
 
           <details class="more">
-            <summary>Prompt, college, word limit <span class="opt">(optional, improves feedback)</span></summary>
-            <div class="field">
-              <label for="prompt">Essay prompt</label>
-              <textarea id="prompt" name="prompt" rows="3" placeholder="Paste the question you are answering"></textarea>
-            </div>
+            <summary>College and word limit <span class="opt">(optional)</span></summary>
             <div class="row">
               <div class="field">
                 <label for="college">College</label>
