@@ -1,0 +1,10 @@
+# Render Blueprint: New > Blueprint, point at this repo, then set ANTHROPIC_API_KEY.
+services:
+  - type: web
+    name: alial
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/config
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false

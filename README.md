@@ -41,6 +41,10 @@ No key yet? `npm run dev` starts in mock mode with placeholder output so you can
 
 `prompts/summarizer.txt` ("Summary Generator - AI Text Summarizer") runs after the four analyses. It receives only the four analyses (never the essay) plus the length the user picked (Short, Medium, or Detailed), and its Summary / Key Takeaways / Conclusion output appears in the **Summary** tab. The four full analyses sit in their own tabs next to it. The message that carries the analyses lives in `summarizerMessage()` in `src/pipeline.js`.
 
+## Deploy
+
+The repo includes a `Dockerfile` and a Render Blueprint (`render.yaml`). On Render: New > Blueprint, select this repo, set `ANTHROPIC_API_KEY`. Any host that runs a Node 22 server or a Docker image works: set `ANTHROPIC_API_KEY`, and the app listens on `PORT`. Neither file has been test-built yet.
+
 ## Layout
 
 ```
