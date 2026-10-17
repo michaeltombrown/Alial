@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alial</title>
+  <meta name="description" content="Alial analyzes your college application essays with four independent reviewers and one clear final report.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f4bd6'/%3E%3Ctext x='16' y='23' font-family='Georgia,serif' font-size='20' font-weight='700' text-anchor='middle' fill='white'%3EA%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="/" aria-label="Alial home">Alial</a>
+      <span class="tag">Essay analysis, review &amp; suggestions</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Step 1: submit -->
+    <section id="view-form">
+      <h1>Get your essay reviewed.</h1>
+      <p class="lede">Four independent reviewers read your essay, then Alial combines them into one clear report.</p>
+
+      <div id="mock-banner" class="banner" hidden>Mock mode: results are placeholders, not real analysis.</div>
+
+      <form id="form" novalidate>
+        <div class="field">
+          <label for="type">What kind of essay is this?</label>
+          <select id="type" name="type" required></select>
+          <p class="hint" id="type-hint"></p>
+        </div>
+
+        <div class="field">
+          <span class="label" id="essay-label">Your essay</span>
+          <div class="tabs" role="tablist" aria-labelledby="essay-label">
+            <button type="button" role="tab" id="tab-upload" aria-selected="true" aria-controls="panel-upload">Upload file</button>
+            <button type="button" role="tab" id="tab-paste" aria-selected="false" aria-controls="panel-paste" tabindex="-1">Paste text</button>
+          </div>
+
+          <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload">
+            <label class="drop" id="drop">
+              <input type="file" id="file" name="file" accept=".docx,.pdf,.txt,.rtf,.md">
+              <span class="drop-main" id="drop-main">Drop your essay here, or <u>browse</u></span>
+              <span class="drop-sub" id="drop-sub">Word, PDF, text, or RTF. 5 MB max.</span>
+            </label>
+          </div>
+
+          <div id="panel-paste" role="tabpanel" aria-labelledby="tab-paste" hidden>
+            <textarea id="essay" name="essay" rows="12" placeholder="Paste your essay here" aria-label="Essay text"></textarea>
+          </div>
+
+          <div class="counter" id="counter" aria-live="polite"></div>
+        </div>
+
+        <details class="more">
+          <summary>Add the prompt or college <span class="opt">(optional, improves feedback)</span></summary>
+          <div class="field">
+            <label for="prompt">Essay prompt</label>
+            <textarea id="prompt" name="prompt" rows="3" placeholder="Paste the question you are answering"></textarea>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="college">College</label>
+              <input id="college" name="college" type="text" placeholder="e.g. Brown University" autocomplete="off">
+            </div>
+            <div class="field narrow">
+              <label for="wordLimit">Word limit</label>
+              <input id="wordLimit" name="wordLimit" type="number" min="1" max="5000" inputmode="numeric">
+            </div>
+          </div>
+        </details>
+
+        <p class="error" id="form-error" role="alert" hidden></p>
+        <button class="primary" id="submit" type="submit">Analyze my essay</button>
+        <p class="fine">Your essay is sent for analysis and is not stored by Alial.</p>
+      </form>
+    </section>
+
+    <!-- Step 2: progress -->
+    <section id="view-progress" hidden>
+      <h1>Reading your essay&hellip;</h1>
+      <p class="lede">This usually takes a minute or two. Please keep this page open.</p>
+      <ol class="steps" id="steps" aria-live="polite"></ol>
+      <p class="error" id="progress-error" role="alert" hidden></p>
+      <button class="ghost" id="cancel" type="button">Cancel</button>
+    </section>
+
+    <!-- Step 3: results -->
+    <section id="view-results" hidden>
+      <div class="results-head">
+        <div>
+          <h1>Your report</h1>
+          <p class="lede" id="result-meta"></p>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="copy" type="button">Copy</button>
+          <button class="ghost" id="download" type="button">Download</button>
+          <button class="ghost" id="print" type="button">Print</button>
+        </div>
+      </div>
+      <article class="report" id="report"></article>
+
+      <h2 class="sub">Individual reviews</h2>
+      <p class="lede small">The full reports behind the summary above.</p>
+      <div id="reviews"></div>
+
+      <button class="primary" id="again" type="button">Analyze another essay</button>
+    </section>
+  </main>
+
+  <script src="/vendor/marked.js"></script>
+  <script src="/vendor/purify.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
