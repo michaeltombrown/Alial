@@ -36,15 +36,16 @@ function createMockCompleter() {
     });
     if (user.includes('<report')) {
       return [
-        '## Overall Verdict',
+        '## Summary',
         'This is **mock output** for testing Alial without an API key. Set `ANTHROPIC_API_KEY` to get real analysis.',
         '',
-        '## Where the Reviewers Agree',
-        '- Mock strength one',
-        '- Mock weakness one',
+        '## Key Takeaways',
+        '- Mock strength',
+        '- Mock weakness',
+        '- Mock revision',
         '',
-        '## Top Revisions, in Priority Order',
-        '1. Mock revision',
+        '## Conclusion',
+        'Mock conclusion.',
       ].join('\n');
     }
     return `# Mock review\n\nPrompt starts with: _${system.slice(0, 60).replace(/\n/g, ' ')}..._\n\n| Category | Score |\n|---|---|\n| Voice | 7 |\n| Imagery | 6 |\n\n**Total:** 13/20`;

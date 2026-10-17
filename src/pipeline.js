@@ -31,7 +31,8 @@ function summarizerMessage(input, reports) {
     (r) => `<report reviewer="${r.name}" status="${r.error ? 'failed' : 'ok'}">\n${r.error ? '(This reviewer failed to produce a report.)' : r.text}\n</report>`,
   );
   return [
-    'Synthesize the reviewers\' reports below into the final report for the student.',
+    'The text to summarize is the set of reviewer reports below. Four reviewers independently analyzed the same college application essay. Summarize them together into ONE final report for the student, following your output format.',
+    'Keep each reviewer\'s scores with their scales (for example 14/18, 7.2/10, 142/180) and say where reviewers agree or differ. Put the most important revisions in Key Takeaways, in priority order. Do not rewrite the essay or invent details about the student. A reviewer marked failed has no report; mention that briefly. Do not ask for clarification.',
     '',
     '<context>',
     describeContext(input),

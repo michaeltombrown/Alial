@@ -39,7 +39,7 @@ No key yet? `npm run dev` starts in mock mode with placeholder output so you can
 
 ## The summarizer prompt
 
-`prompts/summarizer.placeholder.txt` is a working placeholder. To use your own, save it as **`prompts/summarizer.txt`**; it takes precedence automatically and the startup warning goes away. The summarizer receives the essay context plus the four reports, each wrapped in `<report reviewer="...">` tags.
+`prompts/summarizer.txt` ("Summary Generator - AI Text Summarizer") is the final step. It receives the essay context plus the four reviewer reports, each wrapped in `<report reviewer="...">` tags, and produces the report shown to the student in its Summary / Key Takeaways / Conclusion format. The wrapper message that frames the reports lives in `summarizerMessage()` in `src/pipeline.js`.
 
 ## Layout
 

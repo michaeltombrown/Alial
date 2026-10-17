@@ -32,11 +32,7 @@ const ANALYZERS = [
   },
 ];
 
-// A user-supplied prompts/summarizer.txt takes precedence over the built-in placeholder.
-function loadSummarizer() {
-  const custom = path.join(PROMPT_DIR, 'summarizer.txt');
-  if (fs.existsSync(custom)) return { system: read('summarizer.txt'), isPlaceholder: false };
-  return { system: read('summarizer.placeholder.txt'), isPlaceholder: true };
-}
+// Final summarizer: "Summary Generator - AI Text Summarizer" runs over the four reviewer reports.
+const SUMMARIZER = { system: read('summarizer.txt') };
 
-module.exports = { ANALYZERS, loadSummarizer };
+module.exports = { ANALYZERS, SUMMARIZER };

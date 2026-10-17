@@ -5,7 +5,7 @@ const multer = require('multer');
 const { ESSAY_TYPES, getEssayType } = require('./src/essayTypes');
 const { extractText, countWords, UserError, MAX_CHARS } = require('./src/extract');
 const { runPipeline } = require('./src/pipeline');
-const { loadSummarizer } = require('./src/analyzers');
+const { SUMMARIZER } = require('./src/analyzers');
 const { createCompleter, createMockCompleter, DEFAULT_MODEL } = require('./src/model');
 
 const PORT = process.env.PORT || 3000;
@@ -15,11 +15,6 @@ const MAX_CONCURRENT = Number(process.env.ALIAL_MAX_CONCURRENT || 4);
 if (!MOCK && !process.env.ANTHROPIC_API_KEY) {
   console.error('ANTHROPIC_API_KEY is not set. Copy .env.example, set your key, or run with ALIAL_MOCK=1 to try the UI.');
   process.exit(1);
-}
-
-const summarizer = loadSummarizer();
-if (summarizer.isPlaceholder) {
-  console.warn('[alial] Using the placeholder summarizer. Add prompts/summarizer.txt to use your own.');
 }
 
 const complete = MOCK
@@ -86,7 +81,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
 
   running++;
   try {
-    await runPipeline({ complete, summarizer, input, emit, signal: controller.signal });
+    await runPipeline({ complete, summarizer: SUMMARIZER, input, emit, signal: controller.signal });
   } catch (err) {
     if (!controller.signal.aborted) {
       console.error('[alial] pipeline failed:', err.message);

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { runPipeline, analyzerMessage, summarizerMessage } = require('../src/pipeline');
-const { ANALYZERS, loadSummarizer } = require('../src/analyzers');
+const { ANALYZERS, SUMMARIZER } = require('../src/analyzers');
 const { getEssayType, ESSAY_TYPES } = require('../src/essayTypes');
 const { rtfToText } = require('../src/rtf');
 
@@ -64,7 +64,7 @@ test('summarizer message marks failed reviewers', () => {
   assert.match(msg, /status="failed"/);
 });
 
-test('loads a summarizer prompt', () => assert.ok(loadSummarizer().system.length > 100));
+test('summarizer is the Summary Generator prompt', () => assert.match(SUMMARIZER.system, /Summary Generator/));
 
 test('rtfToText skips tables and keeps paragraphs and unicode', () => {
   const rtf = "{\\rtf1\\ansi{\\fonttbl\\f0 Times;}{\\colortbl;\\red0;}\\f0 Hello \\u8212? world\\par It\\'92s me\\\nNext}";
