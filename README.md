@@ -1,6 +1,6 @@
 # Alial
 
-College essay analysis, review, and suggestions. Upload or paste an application essay, pick its type, and Alial has four independent reviewers analyze it, then a summarizer combines their reports into one final report.
+College essay analysis, review, and suggestions. Upload or paste an application essay, pick its type, and Alial has four independent reviewers analyze it, then the Summary Generator summarizes those four analyses at the length the user chooses.
 
 ## How it works
 
@@ -13,7 +13,7 @@ essay + type (+ optional prompt, college, word limit)
         └─► Story Coach                   prompts/common-app-master.txt   (voice and narrative craft)
                      │  (run in parallel)
                      ▼
-              Summarizer  ──►  final report  (+ the four full reviews)
+              Summary Generator  ──►  Summary tab  (the four analyses are tabs beside it)
 ```
 
 If one reviewer fails, the summarizer works with the rest. If all fail, the user sees an error.
@@ -39,7 +39,7 @@ No key yet? `npm run dev` starts in mock mode with placeholder output so you can
 
 ## The summarizer prompt
 
-`prompts/summarizer.txt` ("Summary Generator - AI Text Summarizer") is the final step. It receives the essay context plus the four reviewer reports, each wrapped in `<report reviewer="...">` tags, and produces the report shown to the student in its Summary / Key Takeaways / Conclusion format. The wrapper message that frames the reports lives in `summarizerMessage()` in `src/pipeline.js`.
+`prompts/summarizer.txt` ("Summary Generator - AI Text Summarizer") runs after the four analyses. It receives only the four analyses (never the essay) plus the length the user picked (Short, Medium, or Detailed), and its Summary / Key Takeaways / Conclusion output appears in the **Summary** tab. The four full analyses sit in their own tabs next to it. The message that carries the analyses lives in `summarizerMessage()` in `src/pipeline.js`.
 
 ## Layout
 

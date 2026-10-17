@@ -26,24 +26,21 @@ function analyzerMessage(input) {
   ].join('\n');
 }
 
-function summarizerMessage(input, reports) {
-  const blocks = reports.map(
-    (r) => `<report reviewer="${r.name}" status="${r.error ? 'failed' : 'ok'}">\n${r.error ? '(This reviewer failed to produce a report.)' : r.text}\n</report>`,
-  );
-  return [
-    'The text to summarize is the set of reviewer reports below. Four reviewers independently analyzed the same college application essay. Summarize them together into ONE final report for the student, following your output format.',
-    'Keep each reviewer\'s scores with their scales (for example 14/18, 7.2/10, 142/180) and say where reviewers agree or differ. Put the most important revisions in Key Takeaways, in priority order. Do not rewrite the essay or invent details about the student. A reviewer marked failed has no report; mention that briefly. Do not ask for clarification.',
-    '',
-    '<context>',
-    describeContext(input),
-    '</context>',
-    '',
-    '<essay>',
-    input.essay,
-    '</essay>',
-    '',
-    ...blocks,
-  ].join('\n');
+// Summary length is the user's choice; the Summary Generator prompt adapts to it.
+const SUMMARY_LENGTHS = {
+  short: 'Short: a Summary of 2 to 3 sentences, 3 Key Takeaways, and a one-sentence Conclusion.',
+  medium: 'Medium: a Summary of one short paragraph, 4 to 6 Key Takeaways, and a brief Conclusion.',
+  detailed:
+    'Detailed: a Summary of 2 to 3 paragraphs, 6 to 10 Key Takeaways grouped logically with every important score, number, and name, and a Conclusion.',
+};
+
+// The summarizer sees only the four analyses, never the essay itself.
+function summarizerMessage(reports, length = 'medium') {
+  const text = reports
+    .filter((r) => !r.error)
+    .map((r) => `${r.name} analysis:\n\n${r.text}`)
+    .join('\n\n---\n\n');
+  return `Requested length: ${SUMMARY_LENGTHS[length] || SUMMARY_LENGTHS.medium}\n\n<text>\n${text}\n</text>`;
 }
 
 /**
@@ -74,10 +71,10 @@ async function runPipeline({ complete, summarizer, input, emit = () => {}, signa
   if (ok.length === 0) throw new Error('All reviewers failed. Please try again.');
 
   emit({ type: 'summary_start', reviewersUsed: ok.length });
-  const summary = await complete({ system: summarizer.system, user: summarizerMessage(input, reports), signal });
+  const summary = await complete({ system: summarizer.system, user: summarizerMessage(reports, input.length), signal });
   emit({ type: 'summary', text: summary });
   emit({ type: 'done' });
   return { reports, summary };
 }
 
-module.exports = { runPipeline, analyzerMessage, summarizerMessage };
+module.exports = { runPipeline, analyzerMessage, summarizerMessage, SUMMARY_LENGTHS };

@@ -1,18 +1,15 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  const views = { form: $('view-form'), progress: $('view-progress'), results: $('view-results') };
-  const state = { config: null, mode: 'upload', file: null, controller: null, analyzers: [], reports: {}, summary: '', meta: '' };
+  const state = { config: null, file: null, controller: null, tabs: [], data: {}, active: 'summary', meta: '' };
 
-  const show = (name) => {
-    for (const [k, el] of Object.entries(views)) el.hidden = k !== name;
-    window.scrollTo({ top: 0 });
-  };
+  const countWords = (s) => (s.trim() ? s.trim().split(/\s+/).length : 0);
+  const fmt = (n) => n.toLocaleString();
+  const typeSel = $('type'), limitInput = $('wordLimit'), essayBox = $('essay');
 
   // ---------- Markdown ----------
-  const render = (md) => {
-    const html = DOMPurify.sanitize(marked.parse(md || '', { gfm: true, breaks: false }));
+  function render(md) {
     const tpl = document.createElement('template');
-    tpl.innerHTML = html;
+    tpl.innerHTML = DOMPurify.sanitize(marked.parse(md || '', { gfm: true }));
     tpl.content.querySelectorAll('table').forEach((t) => {
       const wrap = document.createElement('div');
       wrap.className = 'table-wrap';
@@ -21,126 +18,126 @@
     });
     tpl.content.querySelectorAll('a').forEach((a) => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
     return tpl.content;
-  };
+  }
 
-  // ---------- Form ----------
-  const typeSel = $('type'), limitInput = $('wordLimit'), essayBox = $('essay'), counter = $('counter'), fileInput = $('file');
-  const countWords = (s) => (s.trim() ? s.trim().split(/\s+/).length : 0);
-
+  // ---------- Left pane ----------
   const currentType = () => state.config.types.find((t) => t.id === typeSel.value);
-  const syncType = () => {
+  const currentLimit = () => parseInt(limitInput.value, 10) || currentType()?.limit || 0;
+
+  function updateCount() {
+    const el = $('in-count');
+    el.classList.remove('over');
+    if (state.file) { el.textContent = ''; return; }
+    const n = countWords(essayBox.value);
+    el.textContent = n ? `${fmt(n)} words (limit ${fmt(currentLimit())})` : '';
+    if (n > currentLimit()) { el.classList.add('over'); el.textContent += `, ${n - currentLimit()} over`; }
+  }
+
+  function syncType() {
     const t = currentType();
     $('type-hint').textContent = t.hint;
     limitInput.value = t.limit;
-    updateCounter();
-  };
-
-  function updateCounter() {
-    const limit = parseInt(limitInput.value, 10) || currentType()?.limit || 0;
-    counter.classList.remove('over');
-    if (state.mode === 'paste') {
-      const n = countWords(essayBox.value);
-      counter.textContent = n ? `${n.toLocaleString()} words (limit ${limit.toLocaleString()})` : '';
-      if (n > limit) { counter.classList.add('over'); counter.textContent += ` — ${n - limit} over`; }
-    } else {
-      counter.textContent = '';
-    }
-  }
-
-  function setMode(mode) {
-    state.mode = mode;
-    for (const m of ['upload', 'paste']) {
-      const tab = $('tab-' + m);
-      tab.setAttribute('aria-selected', String(m === mode));
-      tab.tabIndex = m === mode ? 0 : -1;
-      $('panel-' + m).hidden = m !== mode;
-    }
-    updateCounter();
+    updateCount();
   }
 
   function setFile(file) {
     state.file = file || null;
-    $('drop').classList.toggle('has-file', !!file);
-    $('drop-main').textContent = file ? file.name : 'Drop your essay here, or browse';
-    $('drop-sub').textContent = file ? `${(file.size / 1024).toFixed(0)} KB. Click to choose a different file.` : 'Word, PDF, text, or RTF. 5 MB max.';
-    if (!file) fileInput.value = '';
+    $('paste-box').hidden = !!file;
+    $('file-chip').hidden = !file;
+    if (file) $('file-name').textContent = `${file.name} (${Math.max(1, Math.round(file.size / 1024))} KB)`;
+    else $('file').value = '';
+    updateCount();
   }
 
-  function showError(el, msg) {
-    el.textContent = msg || '';
-    el.hidden = !msg;
-  }
+  const showError = (el, msg) => { el.textContent = msg || ''; el.hidden = !msg; };
 
-  // ---------- Progress ----------
-  function buildSteps(analyzers) {
-    const list = $('steps');
-    list.replaceChildren();
-    const mk = (id, name, desc, cls) => {
-      const li = document.createElement('li');
-      li.id = 'step-' + id;
-      li.className = cls;
-      li.innerHTML = '<span class="dot" aria-hidden="true"></span><div><div class="name"></div><div class="desc"></div></div>';
-      li.querySelector('.name').textContent = name;
-      li.querySelector('.desc').textContent = desc;
-      list.append(li);
-    };
-    analyzers.forEach((a) => mk(a.id, a.name, a.tagline, 'running'));
-    mk('summary', 'Final report', 'Combines all four reviews into one summary', 'waiting final');
-  }
-  const setStep = (id, cls, desc) => {
-    const li = $('step-' + id);
-    if (!li) return;
-    li.className = cls + (id === 'summary' ? ' final' : '');
-    if (desc) li.querySelector('.desc').textContent = desc;
-  };
-
-  // ---------- Submit ----------
-  async function submit(e) {
-    e.preventDefault();
-    const err = $('form-error');
-    showError(err, '');
-    const fd = new FormData();
-    fd.append('type', typeSel.value);
-    fd.append('prompt', $('prompt').value);
-    fd.append('college', $('college').value);
-    fd.append('wordLimit', limitInput.value);
-    if (state.mode === 'upload') {
-      if (!state.file) return showError(err, 'Choose a file to upload, or switch to "Paste text".');
-      fd.append('file', state.file);
-    } else {
-      if (countWords(essayBox.value) < 25) return showError(err, 'Paste your full essay (at least 25 words).');
-      fd.append('essay', essayBox.value);
+  // ---------- Right pane ----------
+  function drawTabs() {
+    const bar = $('tabs');
+    bar.replaceChildren();
+    for (const t of state.tabs) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tab';
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(t.id === state.active));
+      b.dataset.status = state.data[t.id].status;
+      b.innerHTML = '<span class="dot" aria-hidden="true"></span><span></span>';
+      b.lastChild.textContent = t.name;
+      b.addEventListener('click', () => { state.active = t.id; drawTabs(); drawOutput(); });
+      bar.append(b);
     }
+    bar.hidden = state.tabs.length === 0;
+  }
 
-    state.reports = {};
-    state.summary = '';
-    state.meta = `${currentType().label}${$('college').value.trim() ? ' · ' + $('college').value.trim() : ''}`;
-    state.controller = new AbortController();
-    $('submit').disabled = true;
-
-    try {
-      const res = await fetch('/api/analyze', { method: 'POST', body: fd, signal: state.controller.signal });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || 'Something went wrong. Please try again.');
-      }
-      showError($('progress-error'), '');
-      show('progress');
-      await readStream(res);
-    } catch (ex) {
-      if (ex.name === 'AbortError') return;
-      if (views.progress.hidden) showError(err, ex.message);
-      else showError($('progress-error'), ex.message);
-    } finally {
-      $('submit').disabled = false;
+  function drawOutput() {
+    const out = $('out');
+    const tab = state.tabs.find((t) => t.id === state.active);
+    const d = state.data[state.active];
+    out.classList.toggle('busy', d.status === 'running');
+    out.replaceChildren();
+    if (tab.tagline) {
+      const p = document.createElement('p');
+      p.className = 'tabdesc';
+      p.textContent = tab.tagline;
+      out.append(p);
     }
+    if (d.text) out.append(render(d.text));
+    else {
+      const p = document.createElement('p');
+      p.className = 'placeholder' + (d.status === 'running' ? ' pending' : '');
+      p.textContent =
+        d.status === 'failed' ? d.error || 'This analysis could not be completed.'
+        : d.status === 'running' ? 'Reading your essay'
+        : 'Waiting for the four analyses to finish';
+      out.append(p);
+    }
+    const hasAny = Object.values(state.data).some((x) => x.text);
+    $('copy').disabled = !d.text;
+    $('download').disabled = !hasAny;
+  }
+
+  function beginRun(analyzers) {
+    state.tabs = [{ id: 'summary', name: 'Summary' }, ...analyzers.map((a) => ({ id: a.id, name: a.name, tagline: a.tagline }))];
+    state.data = { summary: { status: 'waiting' } };
+    analyzers.forEach((a) => (state.data[a.id] = { status: 'running' }));
+    state.active = 'summary';
+    drawTabs();
+    drawOutput();
+  }
+
+  function fullMarkdown() {
+    const parts = [`# Alial report\n\n_${state.meta}_`];
+    for (const t of state.tabs) if (state.data[t.id].text) parts.push(`# ${t.name}\n\n${state.data[t.id].text}`);
+    return parts.join('\n\n---\n\n');
+  }
+
+  // ---------- Run ----------
+  function handle(ev) {
+    switch (ev.type) {
+      case 'start': beginRun(ev.analyzers); break;
+      case 'analyzer':
+        state.data[ev.id] = ev.status === 'done' ? { status: 'done', text: ev.text } : { status: 'failed', error: ev.error };
+        break;
+      case 'summary_start': state.data.summary = { status: 'running' }; break;
+      case 'summary': state.data.summary = { status: 'done', text: ev.text }; break;
+      case 'error': showError($('run-error'), ev.error); break;
+      case 'done': setRunning(false); return true;
+    }
+    drawTabs();
+    drawOutput();
+    return false;
+  }
+
+  function setRunning(on) {
+    $('submit').disabled = on;
+    $('stop').hidden = !on;
   }
 
   async function readStream(res) {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
-    let buf = '';
-    let finished = false;
+    let buf = '', finished = false;
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -152,111 +149,67 @@
         if (line && handle(JSON.parse(line))) finished = true;
       }
     }
-    if (!finished && !state.controller.signal.aborted) {
-      showError($('progress-error'), 'The connection ended before your report was ready. Please try again.');
-    }
+    if (!finished && !state.controller.signal.aborted) showError($('run-error'), 'The connection ended before your report was ready. Please try again.');
   }
 
-  // returns true when the run completed
-  function handle(ev) {
-    switch (ev.type) {
-      case 'start':
-        state.analyzers = ev.analyzers;
-        buildSteps(ev.analyzers);
-        break;
-      case 'analyzer':
-        if (ev.status === 'done') { state.reports[ev.id] = ev.text; setStep(ev.id, 'done'); }
-        else setStep(ev.id, 'failed', ev.error);
-        break;
-      case 'summary_start':
-        setStep('summary', 'running');
-        break;
-      case 'summary':
-        state.summary = ev.text;
-        setStep('summary', 'done');
-        break;
-      case 'done':
-        showResults();
-        return true;
-      case 'error':
-        showError($('progress-error'), ev.error);
-        break;
+  async function submit(e) {
+    e.preventDefault();
+    const err = $('form-error');
+    showError(err, '');
+    showError($('run-error'), '');
+    const fd = new FormData();
+    fd.append('type', typeSel.value);
+    fd.append('length', document.querySelector('input[name=length]:checked').value);
+    fd.append('prompt', $('prompt').value);
+    fd.append('college', $('college').value);
+    fd.append('wordLimit', limitInput.value);
+    if (state.file) fd.append('file', state.file);
+    else {
+      if (countWords(essayBox.value) < 25) return showError(err, 'Paste your full essay or upload a file (at least 25 words).');
+      fd.append('essay', essayBox.value);
     }
-    return false;
-  }
-
-  // ---------- Results ----------
-  function showResults() {
-    $('result-meta').textContent = state.meta;
-    $('report').replaceChildren(render(state.summary));
-    const box = $('reviews');
-    box.replaceChildren();
-    for (const a of state.analyzers) {
-      const text = state.reports[a.id];
-      const d = document.createElement('details');
-      const s = document.createElement('summary');
-      s.append(a.name + (text ? '' : ' (unavailable)'));
-      const sub = document.createElement('span');
-      sub.className = 'desc';
-      sub.textContent = a.tagline;
-      s.append(sub);
-      d.append(s);
-      if (text) {
-        const body = document.createElement('div');
-        body.className = 'review-body';
-        body.append(render(text));
-        d.append(body);
-      }
-      box.append(d);
+    state.meta = currentType().label + ($('college').value.trim() ? ` · ${$('college').value.trim()}` : '');
+    state.controller = new AbortController();
+    setRunning(true);
+    try {
+      const res = await fetch('/api/analyze', { method: 'POST', body: fd, signal: state.controller.signal });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Something went wrong. Please try again.');
+      await readStream(res);
+    } catch (ex) {
+      if (ex.name !== 'AbortError') showError(err, ex.message);
+    } finally {
+      setRunning(false);
     }
-    show('results');
-  }
-
-  function fullMarkdown() {
-    const parts = [`# Alial report\n\n_${state.meta}_\n\n${state.summary}`];
-    for (const a of state.analyzers) if (state.reports[a.id]) parts.push(`\n\n---\n\n# ${a.name}\n\n${state.reports[a.id]}`);
-    return parts.join('');
   }
 
   // ---------- Wire up ----------
   async function init() {
     state.config = await (await fetch('/api/config')).json();
     $('mock-banner').hidden = !state.config.mock;
-    for (const t of state.config.types) typeSel.add(new Option(`${t.label}`, t.id));
+    for (const t of state.config.types) typeSel.add(new Option(t.label, t.id));
     syncType();
   }
 
   typeSel.addEventListener('change', syncType);
-  limitInput.addEventListener('input', updateCounter);
-  essayBox.addEventListener('input', updateCounter);
-  fileInput.addEventListener('change', () => setFile(fileInput.files[0]));
-  $('tab-upload').addEventListener('click', () => setMode('upload'));
-  $('tab-paste').addEventListener('click', () => setMode('paste'));
+  limitInput.addEventListener('input', updateCount);
+  essayBox.addEventListener('input', updateCount);
+  $('file').addEventListener('change', (e) => setFile(e.target.files[0]));
+  $('file-remove').addEventListener('click', () => setFile(null));
+  $('clear').addEventListener('click', () => { setFile(null); essayBox.value = ''; updateCount(); showError($('form-error'), ''); essayBox.focus(); });
   $('form').addEventListener('submit', submit);
+  $('stop').addEventListener('click', () => { state.controller?.abort(); setRunning(false); });
 
-  const drop = $('drop');
-  ['dragenter', 'dragover'].forEach((n) => drop.addEventListener(n, (e) => { e.preventDefault(); drop.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach((n) => drop.addEventListener(n, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
-  drop.addEventListener('drop', (e) => {
-    const f = e.dataTransfer.files[0];
-    if (f) { fileInput.files = e.dataTransfer.files; setFile(f); }
-  });
-
-  $('cancel').addEventListener('click', () => { state.controller?.abort(); show('form'); });
-  $('again').addEventListener('click', () => { setFile(null); essayBox.value = ''; updateCounter(); show('form'); });
   $('copy').addEventListener('click', async (e) => {
-    try { await navigator.clipboard.writeText(fullMarkdown()); e.target.textContent = 'Copied'; } catch { e.target.textContent = 'Copy failed'; }
-    setTimeout(() => (e.target.textContent = 'Copy'), 1500);
+    const btn = e.currentTarget;
+    try { await navigator.clipboard.writeText(state.data[state.active].text || ''); btn.textContent = 'Copied'; }
+    catch { btn.textContent = 'Copy failed'; }
+    setTimeout(() => (btn.textContent = 'Copy'), 1500);
   });
   $('download').addEventListener('click', () => {
     const url = URL.createObjectURL(new Blob([fullMarkdown()], { type: 'text/markdown' }));
     const a = Object.assign(document.createElement('a'), { href: url, download: 'alial-report.md' });
     a.click();
     URL.revokeObjectURL(url);
-  });
-  $('print').addEventListener('click', () => {
-    document.querySelectorAll('#reviews details').forEach((d) => (d.open = true));
-    window.print();
   });
 
   init().catch(() => showError($('form-error'), 'Could not load Alial. Refresh the page.'));

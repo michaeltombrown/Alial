@@ -34,7 +34,7 @@ function createMockCompleter() {
         reject(new Error('aborted'));
       });
     });
-    if (user.includes('<report')) {
+    if (user.startsWith('Requested length:')) {
       return [
         '## Summary',
         'This is **mock output** for testing Alial without an API key. Set `ANTHROPIC_API_KEY` to get real analysis.',

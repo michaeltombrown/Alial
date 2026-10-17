@@ -4,7 +4,7 @@ const multer = require('multer');
 
 const { ESSAY_TYPES, getEssayType } = require('./src/essayTypes');
 const { extractText, countWords, UserError, MAX_CHARS } = require('./src/extract');
-const { runPipeline } = require('./src/pipeline');
+const { runPipeline, SUMMARY_LENGTHS } = require('./src/pipeline');
 const { SUMMARIZER } = require('./src/analyzers');
 const { createCompleter, createMockCompleter, DEFAULT_MODEL } = require('./src/model');
 
@@ -36,6 +36,7 @@ app.get('/api/config', (_req, res) => {
   res.json({
     mock: MOCK,
     maxChars: MAX_CHARS,
+    lengths: Object.keys(SUMMARY_LENGTHS),
     types: ESSAY_TYPES.map(({ id, label, limit, hint }) => ({ id, label, limit, hint })),
   });
 });
@@ -56,6 +57,7 @@ app.post('/api/analyze', upload.single('file'), async (req, res) => {
       type,
       essay,
       wordLimit,
+      length: SUMMARY_LENGTHS[req.body.length] ? req.body.length : 'medium',
       prompt: (req.body.prompt || '').trim().slice(0, 2000),
       college: (req.body.college || '').trim().slice(0, 200),
     };

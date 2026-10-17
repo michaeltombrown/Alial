@@ -33,6 +33,7 @@ test('runs all four analyzers then the summarizer, in that order', async () => {
   assert.strictEqual(reports.length, 4);
   assert.strictEqual(summary, 'out-5');
   reports.forEach((r) => assert.ok(calls[4].user.includes(r.text)));
+  assert.ok(!calls[4].user.includes(essay));
   assert.deepStrictEqual(events.map((e) => e.type).filter((t) => t !== 'analyzer'), ['start', 'summary_start', 'summary', 'done']);
   assert.ok(calls[0].user.includes('<essay>') && calls[0].user.includes('Target college: Brown'));
 });
@@ -59,9 +60,13 @@ test('flags essays over the word limit', () => {
   assert.match(msg, /40 OVER the limit/);
 });
 
-test('summarizer message marks failed reviewers', () => {
-  const msg = summarizerMessage(input(), [{ name: 'A', text: 'fine' }, { name: 'B', error: 'e' }]);
-  assert.match(msg, /status="failed"/);
+test('summarizer receives only the analyses and the length choice, never the essay', () => {
+  const reports = [{ name: 'A', text: 'analysis-a' }, { name: 'B', error: 'e' }, { name: 'C', text: 'analysis-c' }];
+  const msg = summarizerMessage(reports, 'short');
+  assert.ok(msg.includes('analysis-a') && msg.includes('analysis-c'));
+  assert.ok(!msg.includes('B analysis'), 'failed reviewers are left out');
+  assert.match(msg, /Requested length: Short/);
+  assert.ok(!msg.includes(essay) && !msg.includes('Brown'));
 });
 
 test('summarizer is the Summary Generator prompt', () => assert.match(SUMMARIZER.system, /Summary Generator/));
