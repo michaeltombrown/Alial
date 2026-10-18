@@ -1,3 +1,4 @@
+import { startRunLog, adminRuns } from './log.js';
 import { ESSAY_TYPES } from './essayTypes.js';
 import { runPipeline, runSummary, SUMMARY_LENGTHS } from './pipeline.js';
 import { SUMMARIZER } from './analyzers.js';
@@ -91,16 +92,32 @@ function streamRun(request, ctx, run) {
 async function analyze(request, env, ctx) {
   const { response, complete, parsed } = await prepare(request, env, MAX_BODY_BYTES, parseInput);
   if (response) return response;
-  return streamRun(request, ctx, ({ emit, signal }) => runPipeline({ complete, summarizer: SUMMARIZER, input: parsed, emit, signal }));
+  const log = startRunLog({ env, request, kind: 'analyze', parsed });
+  return streamRun(request, ctx, async ({ emit, signal }) => {
+    try {
+      await runPipeline({ complete, summarizer: SUMMARIZER, input: parsed, emit: (e) => { log.capture(e); emit(e); }, signal });
+      await log.finish(signal.aborted ? 'aborted' : undefined);
+    } catch (err) {
+      await log.finish(signal.aborted ? 'aborted' : 'error', err.message);
+      throw err;
+    }
+  });
 }
 
 // Rewrites only the summary from analyses the student already has, so a summary failure never forces a full rerun.
 async function summarize(request, env, ctx) {
   const { response, complete, parsed } = await prepare(request, env, MAX_SUMMARY_BODY_BYTES, parseSummaryRequest);
   if (response) return response;
+  const log = startRunLog({ env, request, kind: 'summarize', parsed });
   return streamRun(request, ctx, async ({ emit, signal }) => {
-    await runSummary({ complete, summarizer: SUMMARIZER, reports: parsed.reports, input: parsed.input, inline: parsed.inline, emit, signal });
-    emit({ type: 'done' });
+    try {
+      await runSummary({ complete, summarizer: SUMMARIZER, reports: parsed.reports, input: parsed.input, inline: parsed.inline, emit: (e) => { log.capture(e); emit(e); }, signal });
+      emit({ type: 'done' });
+      await log.finish(signal.aborted ? 'aborted' : undefined);
+    } catch (err) {
+      await log.finish(signal.aborted ? 'aborted' : 'error', err.message);
+      throw err;
+    }
   });
 }
 
@@ -110,8 +127,9 @@ export default {
     if (pathname === '/api/config') return json(config(env));
     // Lets anyone confirm which version is live (for example after a deploy).
     if (pathname === '/api/health') {
-      return json({ ok: true, app: 'alial', features: ['knowledge-base', 'in-line-review', 'viewpoints', 'engine-summary', 'summary-retry', 'requirement-notes', 'tabbed-layout', 'pdf-download', 'sourced-summary'] });
+      return json({ ok: true, app: 'alial', features: ['knowledge-base', 'in-line-review', 'viewpoints', 'engine-summary', 'summary-retry', 'requirement-notes', 'tabbed-layout', 'pdf-download', 'sourced-summary', 'streaming-summary', 'history', 'request-log'] });
     }
+    if (pathname === '/api/admin/runs') return adminRuns(request, env);
     if (pathname === '/api/analyze' || pathname === '/api/summarize') {
       if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405, { allow: 'POST' });
       return pathname === '/api/analyze' ? analyze(request, env, ctx) : summarize(request, env, ctx);

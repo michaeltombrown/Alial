@@ -327,3 +327,73 @@ test('a stream that starts but never stops is retried as incomplete', async () =
     (e) => e.retryable === true && /before the response was complete/.test(e.message),
   );
 });
+
+// ---- request log
+function fakeDb() {
+  const rows = new Map();
+  return {
+    rows,
+    prepare(sql) {
+      return {
+        bind(...args) {
+          return {
+            run: async () => {
+              if (sql.startsWith('INSERT')) rows.set(args[0], { id: args[0], started_at: args[1], kind: args[2], status: args[3], essay_type: args[4], college: args[5], summary_length: args[6], word_count: args[7], prompt: args[8], essay: args[9], visitor: args[10] });
+              if (sql.startsWith('UPDATE')) Object.assign(rows.get(args[4]), { status: args[0], duration_ms: args[1], results: args[2], error: args[3] });
+              return {};
+            },
+            first: async () => rows.get(args[0]) || null,
+            all: async () => ({ results: [...rows.values()] }),
+          };
+        },
+        run: async () => ({}),
+      };
+    },
+  };
+}
+
+test('worker: every analysis request is logged with its essay and results', async () => {
+  const DB = fakeDb();
+  const c = ctx();
+  const res = await worker.fetch(post({ type: 'common-app', essay, length: 'short', prompt: 'Why Brown?', college: 'Brown' }, { 'cf-connecting-ip': '203.0.113.9' }), env({ DB }), c);
+  await res.text();
+  await c.done();
+  assert.strictEqual(DB.rows.size, 1);
+  const row = [...DB.rows.values()][0];
+  assert.strictEqual(row.status, 'complete');
+  assert.strictEqual(row.kind, 'analyze');
+  assert.strictEqual(row.essay, essay.trim());
+  assert.strictEqual(row.prompt, 'Why Brown?');
+  assert.strictEqual(row.college, 'Brown');
+  assert.match(row.visitor, /^[0-9a-f]{12}$/);
+  assert.ok(!JSON.stringify(row).includes('203.0.113.9'), 'the IP address is never stored');
+  const results = JSON.parse(row.results);
+  assert.strictEqual(Object.keys(results.analyzers).length, 4);
+  assert.ok(results.summary.text.includes('## Summary'));
+  assert.ok(results.inline.paragraphs.length >= 1);
+});
+
+test('worker: a logging failure never breaks the analysis', async () => {
+  const DB = { prepare: () => { throw new Error('d1 down'); } };
+  const c = ctx();
+  const res = await worker.fetch(post({ type: 'common-app', essay, length: 'short' }), env({ DB }), c);
+  const events = (await res.text()).trim().split('\n').map((l) => JSON.parse(l));
+  await c.done();
+  assert.ok(events.some((e) => e.type === 'summary'));
+});
+
+test('admin log: hidden without a token secret, 401 on a wrong token, readable with the right one', async () => {
+  const DB = fakeDb();
+  const c = ctx();
+  await (await worker.fetch(post({ type: 'common-app', essay, length: 'short' }), env({ DB }), c)).text();
+  await c.done();
+  const get = (path, token, e) => worker.fetch(new Request(`https://alial.test/api/admin/runs${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} }), env(e), ctx());
+  assert.strictEqual((await get('', 'x', { DB })).status, 404, 'no ADMIN_TOKEN configured');
+  assert.strictEqual((await get('', 'wrong', { DB, ADMIN_TOKEN: 'secret-token' })).status, 401);
+  assert.strictEqual((await get('', null, { DB, ADMIN_TOKEN: 'secret-token' })).status, 401);
+  const list = await (await get('', 'secret-token', { DB, ADMIN_TOKEN: 'secret-token' })).json();
+  assert.strictEqual(list.runs.length, 1);
+  const id = list.runs[0].id;
+  const one = await (await get(`?id=${id}`, 'secret-token', { DB, ADMIN_TOKEN: 'secret-token' })).json();
+  assert.ok(one.results.summary.text);
+});

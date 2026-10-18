@@ -11,6 +11,8 @@
     // Only the API runs Worker code; pages and scripts are served as static assets.
     "run_worker_first": ["/api/*"]
   },
+  // Request log for testing: every analysis request and its results. Read it at /admin with the ADMIN_TOKEN secret.
+  "d1_databases": [{ "binding": "DB", "database_name": "alial-logs", "database_id": "430a869b-c993-4b0a-b317-150d7afb635b" }],
   // Per-visitor limit on analyses (each one makes five paid model calls). Period must be 10 or 60.
   "ratelimits": [
     {

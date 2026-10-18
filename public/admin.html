@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Alial request log</title>
+  <link rel="stylesheet" href="/app.css">
+  <style>
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 56px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    pre { white-space: pre-wrap; word-break: break-word; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; font: 13px/1.5 ui-monospace, monospace; }
+    .row { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+    input[type=password] { flex: 1 1 260px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+    .ok { color: var(--ok); } .bad { color: var(--err); }
+    h2 { margin: 22px 0 6px; font-size: 17px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Alial request log</h1>
+    <div class="row">
+      <input id="token" type="password" placeholder="Admin token" autocomplete="off">
+      <button class="ghost" id="load" type="button">Load</button>
+      <button class="ghost" id="back" type="button" hidden>Back to list</button>
+    </div>
+    <p class="notice err" id="msg" hidden></p>
+    <div id="view"></div>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const tokenBox = $('token');
+    try { tokenBox.value = sessionStorage.getItem('alial.admin') || ''; } catch {}
+    const msg = (t) => { $('msg').hidden = !t; $('msg').textContent = t || ''; };
+    const el = (tag, text, cls) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; };
+
+    async function api(query) {
+      const res = await fetch('/api/admin/runs' + query, { headers: { authorization: 'Bearer ' + tokenBox.value.trim() } });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(res.status === 401 ? 'That token was not accepted.' : res.status === 404 ? 'The request log is not set up yet (needs the DB binding and the ADMIN_TOKEN secret).' : body.error || 'Request failed.');
+      return body;
+    }
+
+    async function list() {
+      msg('');
+      $('back').hidden = true;
+      try {
+        const { runs } = await api('?limit=100');
+        try { sessionStorage.setItem('alial.admin', tokenBox.value.trim()); } catch {}
+        const table = el('table');
+        const head = el('tr');
+        for (const h of ['When', 'Type', 'College', 'Words', 'Length', 'Status', 'Time', 'Tester', 'Country']) head.append(el('th', h));
+        table.append(head);
+        for (const r of runs) {
+          const tr = el('tr');
+          const a = el('a', new Date(r.started_at).toLocaleString());
+          a.href = '#' + r.id;
+          a.addEventListener('click', (e) => { e.preventDefault(); detail(r.id); });
+          const when = el('td'); when.append(a);
+          const ok = r.status === 'complete';
+          tr.append(when, el('td', `${r.kind === 'summarize' ? '(summary retry) ' : ''}${r.essay_type || ''}`), el('td', r.college || ''), el('td', String(r.word_count ?? '')),
+            el('td', r.summary_length || ''), el('td', r.status, ok ? 'ok' : r.status === 'running' ? '' : 'bad'),
+            el('td', r.duration_ms != null ? Math.round(r.duration_ms / 1000) + 's' : ''), el('td', r.visitor || ''), el('td', r.country || ''));
+          table.append(tr);
+        }
+        $('view').replaceChildren(runs.length ? table : el('p', 'No requests logged yet.'));
+      } catch (e) { msg(e.message); }
+    }
+
+    async function detail(id) {
+      msg('');
+      try {
+        const r = await api('?id=' + encodeURIComponent(id));
+        $('back').hidden = false;
+        const v = $('view');
+        v.replaceChildren(
+          el('p', `${new Date(r.started_at).toLocaleString()} · ${r.essay_type || ''} · ${r.college || 'no college'} · ${r.word_count} words · ${r.summary_length} summary · ${r.status}${r.duration_ms != null ? ' · ' + Math.round(r.duration_ms / 1000) + 's' : ''} · tester ${r.visitor || '?'} (${r.country || '?'})`),
+          ...(r.error ? [el('p', r.error, 'bad')] : []),
+          el('h2', 'Question / context'), el('pre', r.prompt || '(none)'),
+          el('h2', 'Essay'), el('pre', r.essay),
+        );
+        const res = r.results || {};
+        const sum = res.summary;
+        if (sum) v.append(el('h2', 'Summary' + (sum.truncated ? ' (cut off)' : '')), el('pre', sum.text || sum.error || ''));
+        if (res.inline) {
+          const lines = res.inline.status === 'done'
+            ? [res.inline.arc, ...res.inline.paragraphs.map((p) => `#${p.n}  ${p.role}\n  flow: ${p.flow}\n  issues: ${p.issues.join(' | ')}\n  suggestions: ${p.suggestions.join(' | ')}`)]
+            : [res.inline.error];
+          v.append(el('h2', 'In-Line Review'), el('pre', lines.join('\n\n')));
+        }
+        for (const [name, a] of Object.entries(res.analyzers || {})) v.append(el('h2', 'Analysis: ' + name), el('pre', a.text || a.error || ''));
+      } catch (e) { msg(e.message); }
+    }
+
+    $('load').addEventListener('click', list);
+    $('back').addEventListener('click', list);
+    tokenBox.addEventListener('keydown', (e) => { if (e.key === 'Enter') list(); });
+    if (tokenBox.value) list();
+  </script>
+</body>
+</html>
