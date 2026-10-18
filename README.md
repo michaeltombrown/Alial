@@ -49,7 +49,9 @@ The `alial` Worker is connected to this repository with Workers Builds, so a pus
 
 **One-time setup:** in the Cloudflare dashboard open Workers & Pages > `alial` > Settings > Variables and Secrets > Add, choose type **Secret**, name `ANTHROPIC_API_KEY`, paste your key, and deploy. Optional: add `ALIAL_MODEL` (default `claude-sonnet-5-5`).
 
-Each essay makes five paid model calls. The rate limit in `wrangler.jsonc` is per location and per visitor; for stronger protection, put the Worker behind Cloudflare Access.
+After a deploy, open `/api/health` on the site. It lists the features of the running version (for example `in-line-review` and `knowledge-base`), so you can tell whether the new code is live.
+
+Each essay makes six paid model calls (four analyses, the in-line review, and the summary). The rate limit in `wrangler.jsonc` is per location and per visitor; for stronger protection, put the Worker behind Cloudflare Access.
 
 ## Develop
 
