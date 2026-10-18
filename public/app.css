@@ -105,7 +105,26 @@ select:focus, input:focus, textarea:focus, button:focus-visible, .seg input:focu
 
 .output { min-height: 300px; overflow-wrap: anywhere; min-width: 0; line-height: 1.65; }
 .output .placeholder { color: var(--muted); margin: 0; }
-.output .tabdesc { color: var(--muted); font-size: 14px; margin: 0 0 8px; }
+
+.output .viewpoint { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; font-size: 14px; line-height: 1.5; }
+.output .viewpoint strong { color: var(--accent); }
+.para { border-top: 1px solid var(--line); padding: 14px 0 6px; }
+.para:first-child { border-top: 0; padding-top: 0; }
+.para-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 6px; }
+.para-n { font: 600 12px/1 var(--body); text-transform: uppercase; letter-spacing: .08em; color: var(--accent); }
+.para-purpose { color: var(--muted); font-size: 14px; }
+.output .works { font-size: 14px; margin: 4px 0 8px; }
+.output .no-issues { color: var(--muted); font-size: 14px; margin: 4px 0 8px; }
+.comment { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+.comment .lbl { font: 600 11px/1 var(--body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 10px 0 4px; }
+.comment .lbl:first-child { margin-top: 0; }
+.comment .lbl.issues { color: var(--err); }
+.comment .lbl.suggest { color: var(--ok); }
+.output .comment blockquote.orig { margin: 0; padding: .3em .8em; border-left: 3px solid var(--line); color: var(--ink); background: var(--bg); border-radius: 0 6px 6px 0; font-style: italic; }
+.output .comment ul { margin: 0; padding-left: 1.2em; }
+.full-para { margin: 4px 0 8px; font-size: 14px; }
+.full-para summary { cursor: pointer; color: var(--muted); }
+.full-para p { margin: 8px 0 0; white-space: pre-wrap; }
 .output h1, .output h2, .output h3 { font-family: var(--display); line-height: 1.25; letter-spacing: -0.01em; margin: 1.4em 0 .4em; text-transform: none; color: var(--ink); }
 .output > :first-child { margin-top: 0; }
 .output h1 { font-size: 22px; } .output h2 { font-size: 19px; } .output h3 { font-size: 17px; }

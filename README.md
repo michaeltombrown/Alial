@@ -1,21 +1,27 @@
 # Alial
 
-College essay analysis, review, and suggestions. A student pastes or uploads an application essay, picks its type, and adds the question being answered. Four independent analyses review the essay, then the Summary Generator summarizes those four analyses at the length the student chooses (Short, Medium, or Detailed).
+College essay analysis, review, and suggestions. A student pastes or uploads an application essay, picks its type, and adds the question being answered. Four independent analyses and a paragraph-by-paragraph In-Line Review examine the essay, then a summary built from the four analyses is written at the length the student chooses (Short, Medium, or Detailed).
 
 ```
-essay + type + question/context (+ optional college, word limit)
+essay + type + question/context (+ optional college, word limit) + the essay type's knowledge base entry
         |
-        |-- Rubric Reader                 prompts/rubric-rater.txt          (A/B/C, 0 to 18)
-        |-- Admissions Grader             prompts/admissions-grader.txt     (18 categories, 1 to 10)
-        |-- Selective-College Evaluator   prompts/writer-grader-master.txt  (18 categories, /180)
-        `-- Story Coach                   prompts/common-app-master.txt     (voice and narrative craft)
-                     |  (run in parallel)
+        |-- Rubric Reader (Reviewer 1)                 prompts/rubric-rater.txt          (A/B/C, 0 to 18)
+        |-- Selective-College Evaluator (Reviewer 2)   prompts/writer-grader-master.txt  (18 categories, /180)
+        |-- Story Coach (Reviewer 3)                   prompts/common-app-master.txt     (voice and narrative craft)
+        |-- Admissions Grader (Reviewer 4)             prompts/admissions-grader.txt     (18 categories, 1 to 10)
+        `-- In-Line Review                             prompts/inline-review.txt         (paragraph by paragraph)
+                     |  (all five run in parallel and never see each other's output)
                      v
-        Summary Generator  prompts/summarizer.txt  ->  Summary tab
-        (the four full analyses are tabs beside it)
+        Summary: Summary Generator + Intelligence Engine synthesis, over the four analyses only
 ```
 
-The summarizer receives only the four analyses and the chosen length, never the essay. If one analysis fails, the summary is built from the rest. If all fail, the student sees an error.
+The report has six tabs: **Summary**, **In-Line Review**, and one tab per reviewer. Each tab opens with a **Viewpoint** line saying what angle that feedback comes from, so the feedback is easy to tell apart (`angle` in `src/analyzers.js`).
+
+**In-Line Review** goes through the essay paragraph by paragraph. Each comment shows the original words, the issues, and one or more suggestions. The Worker splits the essay into paragraphs itself and checks every quote the model returns against the real text, so the "Original" shown is always the student's own words, and a quote that cannot be found is dropped. Suggestions describe what to do and never rewrite the essay.
+
+**Summary** is built from three parts, in `src/analyzers.js`: the Summary Generator role (`prompts/summarizer.txt`, unaltered), an application note (`prompts/synthesis-integration.txt`, written for Alial), and Sections 1, 3, 5, and 7 to 11 of the College Essay Intelligence Engine specification (`prompts/intelligence-engine.txt`, stored in full). The summarizer receives only the four analyses, the essay type, the prompt the student supplied, the word count against the limit, and the chosen length (Short, Medium, or Detailed), never the essay. If a reviewer fails, the summary says so and is labeled partial.
+
+Not implemented from the Engine specification: a single overall X/10 essay score (the essay-type scoring rubric it requires has not been supplied; the summary shows each reviewer's native score and a 0 to 100 reference score instead), school-neutral instructions for the four reviewers, source-eligibility retrieval, version comparison for revisions, and recorded three-pass validation (the summarizer self-checks silently).
 
 ## Essay type knowledge base
 

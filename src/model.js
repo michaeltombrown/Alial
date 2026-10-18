@@ -68,6 +68,17 @@ export function createMockCompleter() {
         reject(new Error('aborted'));
       });
     });
+    if (system.startsWith("You are Alial's In-Line Review editor")) {
+      const paras = [...user.matchAll(/^\[P(\d+)\]\n(.+)$/gm)];
+      return JSON.stringify({
+        paragraphs: paras.map((m) => ({
+          n: Number(m[1]),
+          purpose: 'Mock: sets up the idea.',
+          works: 'Mock: a clear, personal opening.',
+          comments: [{ quote: m[2].split(/\s+/).slice(0, 8).join(' '), issues: ['Mock issue: the claim is stated without a concrete example.'], suggestions: ['Add one specific moment that shows it.', 'Ask yourself what you noticed in that moment.'] }],
+        })),
+      });
+    }
     if (user.startsWith('Requested length:')) {
       return [
         '## Summary',

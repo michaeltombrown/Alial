@@ -71,37 +71,112 @@
     bar.hidden = state.tabs.length === 0;
   }
 
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+  const snippet = (t, max = 300) => (t.length > max ? t.slice(0, max).replace(/\s+\S*$/, '') + '…' : t);
+
+  // Paragraph-by-paragraph review: original words, the issues, and one or more suggestions.
+  function renderInline(paragraphs) {
+    const frag = document.createDocumentFragment();
+    for (const p of paragraphs) {
+      const sec = el('section', 'para');
+      const head = el('div', 'para-head');
+      head.append(el('span', 'para-n', `Paragraph ${p.n} of ${paragraphs.length}`));
+      if (p.purpose) head.append(el('span', 'para-purpose', p.purpose));
+      sec.append(head);
+      if (p.works) {
+        const w = el('p', 'works');
+        w.append(el('strong', '', 'What works: '), document.createTextNode(p.works));
+        sec.append(w);
+      }
+      if (!p.comments.length) sec.append(el('p', 'no-issues', 'No major issues in this paragraph.'));
+      for (const c of p.comments) {
+        const box = el('div', 'comment');
+        box.append(el('div', 'lbl', 'Original'), el('blockquote', 'orig', c.quote || snippet(p.text)));
+        if (c.issues.length) {
+          box.append(el('div', 'lbl issues', 'Issues'));
+          const ul = el('ul');
+          c.issues.forEach((i) => ul.append(el('li', '', i)));
+          box.append(ul);
+        }
+        if (c.suggestions.length) {
+          box.append(el('div', 'lbl suggest', c.suggestions.length > 1 ? 'Suggestions' : 'Suggestion'));
+          const ul = el('ul');
+          c.suggestions.forEach((i) => ul.append(el('li', '', i)));
+          box.append(ul);
+        }
+        sec.append(box);
+      }
+      if (p.text.length > 300) {
+        const d = el('details', 'full-para');
+        d.append(el('summary', '', 'Show full paragraph'), el('p', '', p.text));
+        sec.append(d);
+      }
+      frag.append(sec);
+    }
+    return frag;
+  }
+
+  function inlineToMarkdown(paragraphs) {
+    return paragraphs
+      .map((p) => {
+        const lines = [`## Paragraph ${p.n} of ${paragraphs.length}`];
+        if (p.purpose) lines.push(`Purpose: ${p.purpose}`);
+        if (p.works) lines.push(`What works: ${p.works}`);
+        if (!p.comments.length) lines.push('No major issues in this paragraph.');
+        for (const c of p.comments) {
+          lines.push('**Original**', `> ${c.quote || snippet(p.text)}`);
+          if (c.issues.length) lines.push('**Issues**', ...c.issues.map((i) => `- ${i}`));
+          if (c.suggestions.length) lines.push('**Suggestions**', ...c.suggestions.map((i) => `- ${i}`));
+        }
+        return lines.join('\n\n');
+      })
+      .join('\n\n');
+  }
+
+  // The text a tab contributes to Copy and Download.
+  const tabText = (id) => {
+    const d = state.data[id];
+    return d.paragraphs ? inlineToMarkdown(d.paragraphs) : d.text || '';
+  };
+
   function drawOutput() {
     const out = $('out');
     const tab = state.tabs.find((t) => t.id === state.active);
     const d = state.data[state.active];
     out.classList.toggle('busy', d.status === 'running');
     out.replaceChildren();
-    if (tab.tagline) {
-      const p = document.createElement('p');
-      p.className = 'tabdesc';
-      p.textContent = tab.tagline;
-      out.append(p);
+    if (tab.angle) {
+      const v = el('p', 'viewpoint');
+      v.append(el('strong', '', 'Viewpoint: '), document.createTextNode(tab.angle));
+      out.append(v);
     }
-    if (d.text) out.append(render(d.text));
+    if (d.paragraphs) out.append(renderInline(d.paragraphs));
+    else if (d.text) out.append(render(d.text));
     else {
-      const p = document.createElement('p');
-      p.className = 'placeholder' + (d.status === 'running' ? ' pending' : '');
+      const p = el('p', 'placeholder' + (d.status === 'running' ? ' pending' : ''));
       p.textContent =
         d.status === 'failed' ? d.error || 'This analysis could not be completed.'
-        : d.status === 'running' ? 'Reading your essay'
+        : d.status === 'running' ? (state.active === 'inline' ? 'Reading your essay paragraph by paragraph' : 'Reading your essay')
         : 'Waiting for the four analyses to finish';
       out.append(p);
     }
-    const hasAny = Object.values(state.data).some((x) => x.text);
-    $('copy').disabled = !d.text;
-    $('download').disabled = !hasAny;
+    $('copy').disabled = !tabText(state.active);
+    $('download').disabled = !state.tabs.some((t) => tabText(t.id));
   }
 
-  function beginRun(analyzers) {
-    state.tabs = [{ id: 'summary', name: 'Summary' }, ...analyzers.map((a) => ({ id: a.id, name: a.name, tagline: a.tagline }))];
-    state.data = { summary: { status: 'waiting' } };
-    analyzers.forEach((a) => (state.data[a.id] = { status: 'running' }));
+  function beginRun(ev) {
+    state.tabs = [
+      { id: 'summary', name: 'Summary', angle: ev.summaryAngle },
+      { id: 'inline', name: 'In-Line Review', angle: ev.inlineAngle },
+      ...ev.analyzers.map((a) => ({ id: a.id, name: a.name, tagline: a.tagline, angle: a.angle })),
+    ];
+    state.data = { summary: { status: 'waiting' }, inline: { status: 'running' } };
+    ev.analyzers.forEach((a) => (state.data[a.id] = { status: 'running' }));
     state.active = 'summary';
     drawTabs();
     drawOutput();
@@ -109,7 +184,10 @@
 
   function fullMarkdown() {
     const parts = [`# Alial report\n\n_${state.meta}_`];
-    for (const t of state.tabs) if (state.data[t.id].text) parts.push(`# ${t.name}\n\n${state.data[t.id].text}`);
+    for (const t of state.tabs) {
+      if (!tabText(t.id)) continue;
+      parts.push(`# ${t.name}\n\n${t.angle ? `_Viewpoint: ${t.angle}_\n\n` : ''}${tabText(t.id)}`);
+    }
     return parts.join('\n\n---\n\n');
   }
 
@@ -117,9 +195,12 @@
   function handle(ev) {
     switch (ev.type) {
       case 'ping': return false;
-      case 'start': beginRun(ev.analyzers); break;
+      case 'start': beginRun(ev); break;
       case 'analyzer':
         state.data[ev.id] = ev.status === 'done' ? { status: 'done', text: ev.text } : { status: 'failed', error: ev.error };
+        break;
+      case 'inline':
+        state.data.inline = ev.status === 'done' ? { status: 'done', paragraphs: ev.paragraphs } : { status: 'failed', error: ev.error };
         break;
       case 'summary_start': state.data.summary = { status: 'running' }; break;
       case 'summary': state.data.summary = { status: 'done', text: ev.text }; break;
@@ -222,7 +303,7 @@
 
   $('copy').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
-    try { await navigator.clipboard.writeText(state.data[state.active].text || ''); btn.textContent = 'Copied'; }
+    try { await navigator.clipboard.writeText(tabText(state.active)); btn.textContent = 'Copied'; }
     catch { btn.textContent = 'Copy failed'; }
     setTimeout(() => (btn.textContent = 'Copy'), 1500);
   });

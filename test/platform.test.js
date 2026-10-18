@@ -12,7 +12,7 @@ const essay = 'The summer my grandmother taught me to fold dumplings changed how
 
 test('generated prompts match prompts/*.txt (run `npm run build` if this fails)', () => {
   const files = readdirSync(new URL('../prompts/', import.meta.url)).filter((f) => f.endsWith('.txt'));
-  assert.strictEqual(files.length, 5);
+  assert.strictEqual(files.length, 8);
   for (const f of files) {
     assert.strictEqual(PROMPTS[f.replace('.txt', '')], readFileSync(new URL(`../prompts/${f}`, import.meta.url), 'utf8').trim(), f);
   }
@@ -84,7 +84,7 @@ test('worker: config, assets, and method handling', async () => {
   assert.strictEqual((await worker.fetch(new Request('https://alial.test/api/analyze'), env(), ctx())).status, 405);
 });
 
-test('worker: streams the five-step analysis as NDJSON', async () => {
+test('worker: streams the analyses, the in-line review, and the summary as NDJSON', async () => {
   const c = ctx();
   const res = await worker.fetch(post({ type: 'common-app', essay, length: 'detailed', prompt: 'Why Brown?' }), env(), c);
   assert.strictEqual(res.status, 200);
@@ -93,6 +93,9 @@ test('worker: streams the five-step analysis as NDJSON', async () => {
   await c.done();
   assert.strictEqual(events[0].type, 'start');
   assert.strictEqual(events.filter((e) => e.type === 'analyzer' && e.status === 'done').length, 4);
+  const inline = events.find((e) => e.type === 'inline');
+  assert.strictEqual(inline.status, 'done');
+  assert.ok(inline.paragraphs.length >= 1 && inline.paragraphs[0].comments[0].issues.length >= 1);
   assert.ok(events.find((e) => e.type === 'summary').text.includes('## Summary'));
   assert.strictEqual(events.at(-1).type, 'done');
 });
