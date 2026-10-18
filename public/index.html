@@ -4,99 +4,108 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Alial</title>
-  <meta name="description" content="Alial reviews your college application essay with four independent analyses and a summary you can read at the length you choose.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d6e6e'/%3E%3Ctext x='16' y='23' font-family='Georgia,serif' font-size='20' font-weight='700' text-anchor='middle' fill='white'%3EA%3C/text%3E%3C/svg%3E">
+  <meta name="description" content="Alial reviews your college application essay with four independent analyses, a paragraph-by-paragraph In-Line Review, and a summary you can read at the length you choose.">
+  <link rel="icon" type="image/svg+xml" href="/logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <div class="app">
-    <header>
-      <h1>Alial</h1>
-      <p class="sub">College essay analysis, review, and suggestions. Four independent analyses of your essay, then a summary at the length you choose.</p>
-    </header>
+  <header class="site-header">
+    <div class="bar">
+      <a class="brand" href="/" aria-label="Alial home">
+        <svg class="logo" width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M20 17H4M4 17L8 13M4 17L8 21M4 7H20M20 7L16 3M20 7L16 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand-name">Alial</span>
+      </a>
+      <div class="main-tabs" role="tablist" aria-label="Alial sections">
+        <button type="button" class="main-tab" role="tab" id="mt-essay" aria-selected="true" aria-controls="view-essay">Essay</button>
+        <button type="button" class="main-tab" role="tab" id="mt-report" aria-selected="false" aria-controls="view-report" tabindex="-1" data-status="idle"><span class="dot" aria-hidden="true"></span>Report</button>
+      </div>
+    </div>
+  </header>
 
+  <main class="app">
     <div id="mock-banner" class="notice info" hidden>Mock mode: results are placeholders, not real analysis.</div>
 
-    <div class="panes">
-      <!-- Left: the essay and choices -->
-      <section class="pane" aria-labelledby="h-src">
-        <div class="pane-head">
-          <h2 id="h-src">Your essay</h2>
-          <span class="meta" id="in-count"></span>
+    <!-- Essay -->
+    <section class="pane" id="view-essay" role="tabpanel" aria-labelledby="mt-essay">
+      <div class="pane-head">
+        <h1 class="pane-title">Your essay</h1>
+        <span class="meta" id="in-count"></span>
+      </div>
+      <p class="sub">Four independent analyses, a paragraph-by-paragraph In-Line Review, and a summary at the length you choose.</p>
+
+      <form id="form" novalidate>
+        <div class="field">
+          <label for="type">Essay type</label>
+          <select id="type" name="type" required></select>
+          <p class="hint" id="type-hint"></p>
         </div>
 
-        <form id="form" novalidate>
-          <div class="field">
-            <label for="type">Essay type</label>
-            <select id="type" name="type" required></select>
-            <p class="hint" id="type-hint"></p>
-          </div>
-
-          <div class="field">
-            <label for="prompt">Question you are answering, or helpful context <span class="opt">(optional)</span></label>
-            <textarea id="prompt" name="prompt" rows="3" placeholder="e.g. &quot;Why do you want to attend Brown?&quot; or &quot;Describe a challenge you overcame.&quot; You can also add context, such as what you most want the essay to show."></textarea>
-          </div>
-
-          <label class="block-label" for="essay">Main essay</label>
-          <div id="paste-box">
-            <textarea id="essay" name="essay" placeholder="Paste your essay here, or upload a file below"></textarea>
-          </div>
-          <div id="file-chip" class="chip" hidden>
-            <span id="file-name"></span>
-            <button type="button" class="link" id="file-remove" aria-label="Remove file">Remove</button>
-          </div>
-
-          <div class="controls">
-            <div class="seg" role="radiogroup" aria-label="Summary length">
-              <label><input type="radio" name="length" value="short"><span>Short</span></label>
-              <label><input type="radio" name="length" value="medium" checked><span>Medium</span></label>
-              <label><input type="radio" name="length" value="detailed"><span>Detailed</span></label>
-            </div>
-            <label class="file"><input type="file" id="file" accept=".docx,.txt,.rtf,.md"><span>Upload a file</span></label>
-            <button class="link" id="clear" type="button">Clear</button>
-          </div>
-          <p class="hint">Length applies to the summary. Word (.docx), text, or RTF uploads, 5 MB max. For a PDF, paste the text.</p>
-
-          <details class="more">
-            <summary>College and word limit <span class="opt">(optional)</span></summary>
-            <div class="row">
-              <div class="field">
-                <label for="college">College</label>
-                <input id="college" name="college" type="text" placeholder="e.g. Brown University" autocomplete="off">
-              </div>
-              <div class="field narrow">
-                <label for="wordLimit">Word limit</label>
-                <input id="wordLimit" name="wordLimit" type="number" min="1" max="5000" inputmode="numeric">
-              </div>
-            </div>
-          </details>
-
-          <p class="notice err" id="form-error" role="alert" hidden></p>
-          <button class="primary" id="submit" type="submit">Analyze my essay</button>
-          <p class="foot">Your essay is sent for analysis and is not stored by Alial.</p>
-        </form>
-      </section>
-
-      <!-- Right: summary and the four analyses -->
-      <section class="pane" aria-labelledby="h-out">
-        <div class="pane-head">
-          <h2 id="h-out">Report</h2>
-          <span class="meta" id="out-meta"></span>
+        <div class="field">
+          <label for="prompt">Question you are answering, or helpful context <span class="opt">(optional)</span></label>
+          <textarea id="prompt" name="prompt" rows="3" placeholder="e.g. &quot;Why do you want to attend Brown?&quot; or &quot;Describe a challenge you overcame.&quot; You can also add context, such as what you most want the essay to show."></textarea>
         </div>
-        <div class="tabs" id="tabs" role="tablist" aria-label="Report sections" hidden></div>
-        <div class="output" id="out" role="tabpanel" aria-live="polite"><p class="placeholder">Your summary and the four full analyses will appear here.</p></div>
-        <p class="notice err" id="run-error" role="alert" hidden></p>
+
+        <label class="block-label" for="essay">Main essay</label>
+        <div id="paste-box">
+          <textarea id="essay" name="essay" placeholder="Paste your essay here, or upload a file below"></textarea>
+        </div>
+        <div id="file-chip" class="chip" hidden>
+          <span id="file-name"></span>
+          <button type="button" class="link" id="file-remove" aria-label="Remove file">Remove</button>
+        </div>
+
         <div class="controls">
+          <div class="seg" role="radiogroup" aria-label="Summary length">
+            <label><input type="radio" name="length" value="short"><span>Short</span></label>
+            <label><input type="radio" name="length" value="medium" checked><span>Medium</span></label>
+            <label><input type="radio" name="length" value="detailed"><span>Detailed</span></label>
+          </div>
+          <label class="file"><input type="file" id="file" accept=".docx,.txt,.rtf,.md"><span>Upload a file</span></label>
+          <button class="link" id="clear" type="button">Clear</button>
+        </div>
+        <p class="hint">Length applies to the summary. Word (.docx), text, or RTF uploads, 5 MB max. For a PDF, paste the text.</p>
+
+        <details class="more">
+          <summary>College and word limit <span class="opt">(optional)</span></summary>
+          <div class="row">
+            <div class="field">
+              <label for="college">College</label>
+              <input id="college" name="college" type="text" placeholder="e.g. Brown University" autocomplete="off">
+            </div>
+            <div class="field narrow">
+              <label for="wordLimit">Word limit</label>
+              <input id="wordLimit" name="wordLimit" type="number" min="1" max="5000" inputmode="numeric">
+            </div>
+          </div>
+        </details>
+
+        <p class="notice err" id="form-error" role="alert" hidden></p>
+        <button class="primary" id="submit" type="submit">Analyze my essay</button>
+        <p class="foot">Your essay is sent for analysis and is not stored by Alial.</p>
+      </form>
+    </section>
+
+    <!-- Report -->
+    <section class="pane" id="view-report" role="tabpanel" aria-labelledby="mt-report" hidden>
+      <div class="pane-head">
+        <h1 class="pane-title">Report</h1>
+        <span class="meta" id="out-meta"></span>
+        <div class="report-actions">
           <button class="ghost" id="copy" type="button" disabled>Copy</button>
           <button class="ghost" id="download" type="button" disabled>Download all</button>
           <button class="ghost" id="stop" type="button" hidden>Stop</button>
         </div>
-      </section>
-    </div>
-  </div>
+      </div>
+      <div class="tabs" id="tabs" role="tablist" aria-label="Report sections" hidden></div>
+      <div class="output" id="out" role="tabpanel" aria-live="polite"><p class="placeholder">Your summary, the In-Line Review, and the four full analyses will appear here after you analyze an essay.</p></div>
+      <p class="notice err" id="run-error" role="alert" hidden></p>
+    </section>
+  </main>
 
   <script src="/vendor/marked.js"></script>
   <script src="/vendor/purify.js"></script>

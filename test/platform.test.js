@@ -252,3 +252,17 @@ test('worker: /api/summarize rewrites only the summary from the analyses it is g
   const limited = env({ LIMITER: { limit: async () => ({ success: false }) } });
   assert.strictEqual((await worker.fetch(new Request('https://alial.test/api/summarize', { method: 'POST', body: JSON.stringify({}) }), limited, ctx())).status, 429);
 });
+
+test('layout: full-width Essay and Report tabs under a fixed header, with the Alial logo', () => {
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+  const logo = readFileSync(new URL('../public/logo.svg', import.meta.url), 'utf8');
+  assert.match(html, /class="site-header"/);
+  assert.match(html, /id="mt-essay"[\s\S]*id="mt-report"/);
+  assert.match(html, /id="view-essay"[\s\S]*id="view-report"/);
+  assert.match(html, /rel="icon" type="image\/svg\+xml" href="\/logo\.svg"/);
+  assert.match(html, /M20 17H4M4 17L8 13M4 17L8 21M4 7H20M20 7L16 3M20 7L16 11/, 'header logo uses the switch-horizontal icon');
+  assert.match(logo, /<svg[\s\S]*M20 17H4M4 17L8 13/);
+  assert.match(css, /\.site-header \{[^}]*position: sticky;[^}]*top: 0/);
+  assert.ok(!/\.panes\b/.test(css) && !/class="panes"/.test(html), 'no side-by-side panes');
+});

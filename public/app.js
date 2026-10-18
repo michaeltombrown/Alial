@@ -1,6 +1,6 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { config: null, file: null, controller: null, tabs: [], data: {}, active: 'summary', meta: '' };
+  const state = { config: null, file: null, controller: null, tabs: [], data: {}, active: 'summary', meta: '', started: false, running: false, mainTab: 'essay' };
 
   const countWords = (s) => (s.trim() ? s.trim().split(/\s+/).length : 0);
   const fmt = (n) => n.toLocaleString();
@@ -192,7 +192,20 @@
     $('download').disabled = !state.tabs.some((t) => tabText(t.id));
   }
 
+  function restoreReport() {
+    $('out').classList.remove('busy');
+    if (state.prev) {
+      Object.assign(state, state.prev);
+      drawTabs();
+      drawOutput();
+    } else {
+      $('out').replaceChildren(el('p', 'placeholder', 'Your summary, the In-Line Review, and the four full analyses will appear here after you analyze an essay.'));
+    }
+    updateReportStatus();
+  }
+
   function beginRun(ev) {
+    state.started = true;
     state.tabs = [
       { id: 'summary', name: 'Summary', angle: ev.summaryAngle },
       { id: 'inline', name: 'In-Line Review', angle: ev.inlineAngle },
@@ -239,9 +252,44 @@
     return false;
   }
 
+  // The two main tabs. The Report tab shows a dot while an analysis is running or after it has finished.
+  function setMainTab(name) {
+    state.mainTab = name;
+    for (const t of ['essay', 'report']) {
+      const tab = $('mt-' + t);
+      tab.setAttribute('aria-selected', String(t === name));
+      tab.tabIndex = t === name ? 0 : -1;
+      $('view-' + t).hidden = t !== name;
+    }
+    window.scrollTo({ top: 0 });
+  }
+
+  function updateReportStatus() {
+    $('mt-report').dataset.status = state.running ? 'running' : state.tabs.length ? 'done' : 'idle';
+  }
+
   function setRunning(on) {
+    state.running = on;
     $('submit').disabled = on;
     $('stop').hidden = !on;
+    updateReportStatus();
+  }
+
+  // Clears the previous report so nothing stale shows when a new analysis starts.
+  function resetReport() {
+    // Keep the previous report so it can be restored if the request is refused before any results arrive.
+    state.prev = state.tabs.length ? { tabs: state.tabs, data: state.data, active: state.active, meta: state.meta } : null;
+    state.started = false;
+    state.tabs = [];
+    state.data = {};
+    $('tabs').hidden = true;
+    $('tabs').replaceChildren();
+    $('out').classList.add('busy');
+    const p = el('p', 'placeholder pending', 'Starting your analysis');
+    $('out').replaceChildren(p);
+    $('copy').disabled = true;
+    $('download').disabled = true;
+    showError($('run-error'), '');
   }
 
   async function readStream(res) {
@@ -326,6 +374,8 @@
     state.meta = currentType().label + ($('college').value.trim() ? ` · ${$('college').value.trim()}` : '');
     state.facts = { type: payload.type, length: payload.length, prompt: payload.prompt, college: payload.college, wordLimit: payload.wordLimit, wordCount: countWords(essay) };
     state.controller = new AbortController();
+    resetReport();
+    setMainTab('report');
     setRunning(true);
     try {
       const res = await fetch('/api/analyze', {
@@ -337,7 +387,14 @@
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Something went wrong. Please try again.');
       await readStream(res);
     } catch (ex) {
-      if (ex.name !== 'AbortError') showError(err, ex.message);
+      if (ex.name === 'AbortError') return;
+      if (state.started) showError($('run-error'), ex.message);
+      else {
+        // The request was refused before any results arrived (for example too many requests): go back to the essay.
+        setMainTab('essay');
+        showError(err, ex.message);
+        restoreReport();
+      }
     } finally {
       setRunning(false);
     }
@@ -358,6 +415,14 @@
   $('file-remove').addEventListener('click', () => setFile(null));
   $('clear').addEventListener('click', () => { setFile(null); essayBox.value = ''; updateCount(); showError($('form-error'), ''); essayBox.focus(); });
   $('form').addEventListener('submit', submit);
+  for (const t of ['essay', 'report']) $('mt-' + t).addEventListener('click', () => setMainTab(t));
+  $('mt-essay').parentElement.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      const next = state.mainTab === 'essay' ? 'report' : 'essay';
+      setMainTab(next);
+      $('mt-' + next).focus();
+    }
+  });
   $('stop').addEventListener('click', () => { state.controller?.abort(); setRunning(false); });
 
   $('copy').addEventListener('click', async (e) => {
