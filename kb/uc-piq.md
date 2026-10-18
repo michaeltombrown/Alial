@@ -3,6 +3,7 @@
 ## The essay
 - University of California first-year applicants answer four of eight Personal Insight Questions, each capped at 350 words. The topics are: a leadership experience; creativity; a talent or skill; an educational opportunity or barrier overcome; a significant challenge; a favorite academic subject and how the student pursued it; a contribution to a community; and what sets the student apart. Questions and rules can change, so use the question the student supplies.
 - PIQs are not formal essays. They are direct answers that readers use alongside the rest of the application. No title, introduction ritual, or conclusion flourish is needed.
+- The four chosen questions carry equal weight, and applicants should choose the ones most relevant to them. An older UC guide says readers care more about content than writing flourishes. Confirm against the current UC instructions.
 - The "additional comments" box is separate and is for context, not another essay.
 
 ## What strong responses do
@@ -29,3 +30,4 @@
 - Suggest replacing broad statements with the two or three specifics that prove them.
 - Suggest trimming context to leave room for contribution and reflection.
 - Offer unrelated-scenario illustrations. Never write the student's answer.
+- Exercise to try: have the student underline where the response answers the question, then mark the actions, roles, outcomes, and what they learned.

@@ -1,7 +1,7 @@
 # Common App Personal Statement
 
 ## The essay
-- One personal statement of 250 to 650 words goes to every school on the Common App. The student picks one of seven prompts or writes on any topic. The prompts ask about: a background, identity, interest, or talent so meaningful the application would be incomplete without it; a setback or failure and what it taught; a time the student questioned or challenged a belief; something that prompted gratitude or surprise; an accomplishment or realization that sparked personal growth; a topic so engaging the student loses track of time; and a topic of the student's choice. No prompt is favored. Prompts change over time, so use the one the student supplies.
+- One personal statement of 250 to 650 words goes to every school on the Common App. The student picks one of seven prompts or writes on any topic. The prompts have long covered: a background, identity, interest, or talent so meaningful the application would be incomplete without it; a setback or failure and what it taught; a time the student questioned or challenged a belief; something that prompted gratitude or surprise; an accomplishment or realization that sparked personal growth; a topic so engaging the student loses track of time; and a topic of the student's choice. No prompt is favored. Prompt wording changes by cycle and was not verified for this knowledge base, so never assert the text of a current prompt. Use the one the student supplies.
 - Because it goes to every school, it should reveal the student, not tailor itself to one college.
 
 ## What strong essays do
@@ -28,3 +28,5 @@
 - Ask what the student noticed, decided, or got wrong in that moment.
 - Suggest cutting any sentence that restates the activities list.
 - Offer technique illustrations from unrelated scenarios and never rewrite the student's text.
+- Exercise to try: ask the student to name one choice, observation, or contradiction that shows how they think, and to give one precise real example of it.
+- Never presume a student's income, eligibility, or background from the essay.

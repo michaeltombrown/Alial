@@ -28,3 +28,5 @@
 - Suggest moving from "I am part of" to "here is what I do, notice, or carry."
 - Suggest one specific, forward-looking sentence about contribution.
 - Teach technique with unrelated scenarios. Never write the essay or invent experiences.
+- Exercise to try: ask for one contribution or encounter and how it shaped the student's perspective.
+- Never require demographic disclosure, never treat any identity as more valuable than another, and never presume background or eligibility from the essay.

@@ -1,0 +1,67 @@
+{
+  "_note": "Requirement notes drawn from the source audit (kb/data). Each cites a source record. None is approved for production, so they are injected as pointers to verify, never as authority. Rules are school-neutral: only application-platform sources and general writing guides are used. Rules from historical sources must set requiresCurrentCheck.",
+  "rules": [
+    {
+      "id": "RULE-COALITION-OPTIONS",
+      "essayTypes": ["coalition"],
+      "resourceId": "SRC-A11CA54800D7",
+      "text": "The Coalition with Scoir page offers six broad essay options (a personal experience, interests, impact on others, a belief that was challenged, obstacles and success, or a topic of the student's choice) and recommends roughly 500 to 650 words. Individual school requirements may differ."
+    },
+    {
+      "id": "RULE-UC-FIRST-YEAR",
+      "essayTypes": ["uc-piq"],
+      "resourceId": "SRC-A8C119DCF877",
+      "text": "UC first-year applicants choose four of eight Personal Insight Questions and may write up to 350 words for each. Responses should explain personal experience, contribution, and relevant context directly. A traditional story arc or elaborate introduction is not a requirement."
+    },
+    {
+      "id": "RULE-UC-EQUAL-WEIGHT",
+      "essayTypes": ["uc-piq"],
+      "resourceId": "SRC-A4B9255D90CB",
+      "requiresCurrentCheck": true,
+      "text": "An older UC worksheet says the four chosen questions receive equal consideration, that applicants should choose the questions most relevant to them, and that readers weigh content over writing flourishes. This comes from a historical resource, so confirm it against the current UC instructions."
+    },
+    {
+      "id": "RULE-UC-TRANSFER-SEPARATE",
+      "essayTypes": ["transfer"],
+      "resourceId": "SRC-4FC51A399317",
+      "text": "UC transfer applicants answer a separate set of Personal Insight Questions. Do not apply UC first-year rules, or any single school's format or word cap, to other transfer essays."
+    },
+    {
+      "id": "RULE-COMMON-APP-ACTIVITY-LIMITS",
+      "essayTypes": ["activity"],
+      "resourceId": "SRC-1F81CC5975D1",
+      "text": "On the Common App activities list the position field allows 50 characters, the organization 100 characters, and the description 150 characters. These are character limits for list entries, not word limits for a supplemental activity essay."
+    },
+    {
+      "id": "RULE-COMMON-APP-ACTIVITY-MEANING",
+      "essayTypes": ["activity"],
+      "resourceId": "SRC-1F81CC5975D1",
+      "text": "The Common App activities worksheet treats jobs, family responsibilities, clubs, hobbies, volunteering, and sports as meaningful pursuits, and advises choosing meaningful activities rather than filling every slot."
+    },
+    {
+      "id": "RULE-SCHOLARSHIP-PRACTICES",
+      "essayTypes": ["scholarship"],
+      "resourceId": "SRC-6617052C6DF5",
+      "text": "A scholarship-essay guide from Scholarships.com recommends outlining around the scholarship's guidelines, writing with justified confidence, tailoring concrete details to the award's criteria, rereading and proofreading, and keeping the applicant's own voice. This is general advice, not the rule of any particular scholarship."
+    },
+    {
+      "id": "RULE-COMMON-APP-PROMPT-TEXT",
+      "essayTypes": ["common-app"],
+      "resourceId": "SRC-C5B5ADD9BDFF",
+      "text": "The Common App confirms a 2026-27 first-year prompt set, but the audit could not read the individual prompt wording. Do not assert the text of any current prompt. Use the prompt the student supplies."
+    },
+    {
+      "id": "RULE-COMMON-APP-ADDITIONAL-INFO",
+      "essayTypes": ["other"],
+      "resourceId": "SRC-2AFFA53FD142",
+      "requiresCurrentCheck": true,
+      "text": "Common App material on the additional information section distinguishes essay requirements from application navigation and older policy. Treat additional information as context to check against the current form, not as a required second personal statement."
+    },
+    {
+      "id": "RULE-NO-PRESUMED-BACKGROUND",
+      "essayTypes": ["common-app", "coalition", "community", "scholarship"],
+      "resourceId": "SRC-A1BDD030288E",
+      "text": "QuestBridge's writing guide advises building the essay around the applicant's own narrative, specificity, personal reflection, and careful editing. Never presume a student's income, eligibility, or background from their essay."
+    }
+  ]
+}

@@ -28,3 +28,5 @@
 - Suggest replacing criticism with a positive statement of what they are seeking.
 - Suggest linking each school detail to something already attempted.
 - Illustrate with unrelated scenarios and never write the student's text.
+- Exercise to try: separate the reasons for leaving from constructive goals for the next school, using the student's actual education history.
+- Never apply one school's transfer essay format or word cap to another school. UC transfer applicants answer a separate set of questions.

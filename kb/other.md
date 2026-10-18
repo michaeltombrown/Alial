@@ -28,3 +28,4 @@
 - Suggest cutting anything that sounds defensive or repeats other sections.
 - Suggest leading with the fact the reader most needs.
 - Never write the response for the student or invent details.
+- Exercise to try: identify the question a reader would still have, and draft only the factual explanation needed to answer it. An additional-information box is not a required second personal statement.

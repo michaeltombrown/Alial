@@ -28,3 +28,4 @@
 - Suggest pairing each school detail with a specific student action or question.
 - Suggest cutting rankings and generic adjectives.
 - Remind the student to verify every school-specific detail. Never write the essay.
+- Exercise to try: confirm the school and the prompt, name one real interest of the student, pair it with one researched opportunity, then test whether the connection holds. Never invent faculty, majors, courses, programs, or policies.

@@ -28,3 +28,4 @@
 - Suggest cutting the first sentence if it only warms up.
 - Suggest trading an abstract claim for one vivid example.
 - Illustrate with unrelated scenarios and never supply replacement wording.
+- Exercise to try: find the one truthful, revealing detail and delete any lead-in that spends scarce words.

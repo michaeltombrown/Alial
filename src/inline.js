@@ -19,11 +19,11 @@ const loose = (s) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-export function inlineMessage({ describe, guidance, paragraphs }) {
+export function inlineMessage({ describe, knowledge = [], paragraphs }) {
   return [
     'Review the essay below paragraph by paragraph, following your instructions in full.',
     '',
-    ...(guidance ? ['<essay_type_guidance>', guidance, '</essay_type_guidance>', ''] : []),
+    ...knowledge,
     '<context>',
     describe,
     '</context>',

@@ -1,7 +1,7 @@
 # Coalition / Scoir Essay
 
 ## The essay
-- The Coalition application (delivered through Scoir) asks for a personal essay with its own set of prompts, with a recommended length in the 500 to 650 word range. The prompts invite stories about background or identity, a challenge or setback, a time the student made a meaningful contribution, a belief that was questioned, or a topic of the student's choice. Use the prompt the student supplies.
+- The Coalition application (delivered through Scoir) asks for a personal essay with its own set of prompts, with a recommended length in the 500 to 650 word range. The official page offers six broad options: a personal experience, interests, impact on others, a belief that was challenged, obstacles and success, or a topic of the student's choice. Individual school requirements may differ. Use the prompt the student supplies.
 - Treat it like a personal statement: the reader wants to understand who the student is beyond grades and activities.
 
 ## What strong essays do
@@ -27,3 +27,5 @@
 - Suggest replacing summary sentences with one concrete scene.
 - Point out where reflection could move from "what happened" to "why it mattered to me."
 - Never supply replacement text. Teach technique with unrelated examples.
+- Exercise to try: map the draft to one prompt, highlight the details only this applicant could supply, then cut the generic claims.
+- Never presume a student's income, eligibility, or background from the essay.

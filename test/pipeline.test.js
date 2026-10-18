@@ -200,3 +200,34 @@ test('in-line review prompt forbids rewriting and invented details', () => {
 });
 
 test('summarizer is the Summary Generator prompt', () => assert.match(SUMMARIZER.system, /Summary Generator/));
+
+test('requirement notes reach the analyses and the in-line review for the matching type only, and never name or link a source', async () => {
+  const { RULES } = await import('../src/generated/kb.js');
+  const { calls, complete } = fakeModel();
+  await runPipeline({ complete, summarizer: { system: 'S' }, input: { ...input(), type: getEssayType('activity') }, emit: () => {} });
+  const first = calls.filter((c) => analyzerSystems.has(c.system) || c.system === INLINE_REVIEW.system);
+  assert.strictEqual(first.length, 5);
+  for (const c of first) {
+    assert.match(c.user, /<requirement_notes>[\s\S]*50 characters[\s\S]*<\/requirement_notes>/);
+    assert.match(c.user, /not yet approved for production/);
+    assert.ok(!/https?:\/\//.test(c.user), 'no URLs in prompts');
+    assert.ok(!/SRC-[0-9A-F]{12}/.test(c.user), 'no source ids in prompts');
+    for (const r of RULES.activity) assert.ok(!c.user.includes(r.source.title), 'no source titles in prompts');
+  }
+  const summaryCall = calls.at(-1);
+  assert.ok(!summaryCall.user.includes('requirement_notes') && !summaryCall.user.includes('50 characters'));
+
+  // a different type gets different notes
+  const uc = analyzerMessage({ ...input(), type: getEssayType('uc-piq'), wordCount: 60 });
+  assert.match(uc, /four of eight Personal Insight Questions/);
+  assert.match(uc, /Historical source: confirm against the current instructions/);
+  assert.ok(!uc.includes('50 characters'));
+  const coalition = analyzerMessage({ ...input(), type: getEssayType('coalition'), wordCount: 60 });
+  assert.match(coalition, /six broad essay options/);
+});
+
+test('the common app entry does not assert current prompt wording', async () => {
+  const { KB } = await import('../src/generated/kb.js');
+  assert.match(KB['common-app'], /never assert the text of a current prompt/);
+  assert.match(analyzerMessage({ ...input(), wordCount: 60 }), /Do not assert the text of any current prompt/);
+});

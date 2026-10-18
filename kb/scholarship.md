@@ -2,6 +2,7 @@
 
 ## The essay
 - Written for a scholarship or honors program, usually 300 to 800 words, answering the sponsor's own prompt. Readers are selection committees comparing many applicants against the scholarship's stated purpose and values.
+- General practices from scholarship-essay guides: outline around the award's guidelines, write with justified confidence, tailor concrete details to the stated criteria, reread and proofread, and keep the student's own voice. These are not the rules of any particular scholarship.
 - Use the prompt and any criteria the student supplies. If none are given, say you cannot judge fit to the award.
 
 ## What strong essays do
@@ -28,3 +29,6 @@
 - Suggest replacing broad goals with the first concrete step already taken.
 - Suggest tailoring rather than reusing an essay written for another purpose.
 - Illustrate with unrelated scenarios. Never write the essay or invent details.
+- Exercise to try: list the provider's published criteria and match each one to evidence the student can substantiate.
+- Never infer a scholarship's criteria or a student's eligibility from generic writing advice.
+- Never presume a student's income, eligibility, or background from the essay.

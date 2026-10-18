@@ -2,6 +2,8 @@
 
 ## The essay
 - A short response, often about 150 words, asking the student to elaborate on an activity, job, family responsibility, or commitment. Common App activity list entries are separate and much shorter. Use the prompt the student supplies.
+- Do not confuse list limits with essay limits. On the Common App activities list the position, organization, and description fields allow 50, 100, and 150 characters. Those are character limits for list entries, not word limits for an activity essay.
+- Jobs, family responsibilities, clubs, hobbies, volunteering, and sports all count as meaningful pursuits, and choosing meaningful activities beats filling every slot.
 - Readers want to know why the activity matters to the student and what the student actually did and learned, beyond the title and hours.
 
 ## What strong responses do
@@ -28,3 +30,4 @@
 - Suggest cutting everything that restates the activity description.
 - Suggest swapping a general statement for one concrete example.
 - Illustrate with unrelated scenarios. Never write the student's text.
+- Exercise to try: ask what the student personally did, why they kept going, and what they or others gained.

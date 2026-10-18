@@ -25,7 +25,7 @@ Not implemented from the Engine specification: a single overall X/10 essay score
 
 ## Essay type knowledge base
 
-`kb/` holds guidance for each of the ten essay types plus the audited source register (`kb/sources.csv`). The guidance for the student's chosen type is added to all four analyses so they calibrate their rubrics and suggestions to that kind of essay (for example, a 100-word short answer is not judged like a 650-word personal statement). See `kb/README.md` for its status and how to upgrade it with sourced content.
+`kb/` holds guidance for each of the ten essay types and short requirement notes taken from an audited source register (`kb/data`). The student's chosen type's guidance and notes are added to the four analyses and the In-Line Review so they calibrate their rubrics and suggestions to that kind of essay (for example, a 100-word short answer is not judged like a 650-word personal statement). The notes are quarantined (not approved for production), are presented to the model as pointers to verify, and no source is ever named or linked in a prompt. See `kb/README.md` for the two tiers, the state of the data, and what was and was not adopted from the integration spec.
 
 ## How it is built
 
@@ -37,7 +37,7 @@ A Cloudflare Worker (`src/worker.js`) with static assets (`public/`). The Worker
 | `src/pipeline.js` | Runs the four analyses in parallel, then the summarizer |
 | `src/model.js` | Anthropic Messages API client (streaming, retries) and an offline mock |
 | `src/validate.js`, `src/essayTypes.js` | Input checks and the essay type presets |
-| `src/generated/prompts.js`, `src/generated/kb.js` | Generated from `prompts/*.txt` and `kb/` |
+| `src/generated/prompts.js`, `src/generated/kb.js` | Generated from `prompts/*.txt`, `kb/*.md` and `kb/rules.json` |
 | `public/` | The interface. Word and RTF uploads are read in the browser; PDFs are not supported (paste the text) |
 | `wrangler.jsonc` | Worker name `alial`, assets, rate limit (4 analyses per minute per visitor) |
 
