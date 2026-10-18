@@ -23,6 +23,7 @@
       <div class="main-tabs" role="tablist" aria-label="Alial sections">
         <button type="button" class="main-tab" role="tab" id="mt-essay" aria-selected="true" aria-controls="view-essay">Essay</button>
         <button type="button" class="main-tab" role="tab" id="mt-report" aria-selected="false" aria-controls="view-report" tabindex="-1" data-status="idle"><span class="dot" aria-hidden="true"></span>Report</button>
+        <button type="button" class="main-tab" role="tab" id="mt-history" aria-selected="false" aria-controls="view-history" tabindex="-1">History</button>
       </div>
     </div>
   </header>
@@ -104,6 +105,16 @@
       <div class="tabs" id="tabs" role="tablist" aria-label="Report sections" hidden></div>
       <div class="output" id="out" role="tabpanel" aria-live="polite"><p class="placeholder">Your summary, the In-Line Review, and the four full analyses will appear here after you analyze an essay.</p></div>
       <p class="notice err" id="run-error" role="alert" hidden></p>
+    </section>
+
+    <!-- History -->
+    <section class="pane" id="view-history" role="tabpanel" aria-labelledby="mt-history" hidden>
+      <div class="pane-head">
+        <h1 class="pane-title">History</h1>
+        <div class="report-actions"><button class="ghost" id="history-clear" type="button" hidden>Clear history</button></div>
+      </div>
+      <p class="hint">Your last 10 analyses. Choose a date to open that analysis and its results. They are saved only in this browser, on this device.</p>
+      <ul class="history" id="history-list"></ul>
     </section>
   </main>
 

@@ -1,6 +1,6 @@
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { config: null, file: null, controller: null, tabs: [], data: {}, active: 'summary', meta: '', started: false, running: false, mainTab: 'essay' };
+  const state = { config: null, file: null, controller: null, tabs: [], data: {}, active: 'summary', meta: '', started: false, running: false, mainTab: 'essay', currentId: null, currentAt: null };
 
   const countWords = (s) => (s.trim() ? s.trim().split(/\s+/).length : 0);
   const fmt = (n) => n.toLocaleString();
@@ -264,6 +264,73 @@
   }
   wireLengthWarning();
 
+  // ---------- History ----------
+  // The last 10 completed analyses, kept in this browser only (localStorage). Each entry holds what the report needs to be shown again.
+  const HISTORY_KEY = 'alial.history.v1';
+  const HISTORY_MAX = 10;
+  const readHistory = () => {
+    try {
+      const list = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      return Array.isArray(list) ? list : [];
+    } catch { return []; }
+  };
+  const writeHistory = (list) => {
+    // If the browser is out of room, drop the oldest entries until it fits.
+    for (let l = list.slice(0, HISTORY_MAX); ; l.pop()) {
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(l)); return l; } catch { if (!l.length) return []; }
+    }
+  };
+  function saveHistory() {
+    if (!state.currentId || !state.tabs.length) return;
+    const entry = { id: state.currentId, at: state.currentAt, meta: state.meta, facts: state.facts, tabs: state.tabs, data: state.data };
+    const rest = readHistory().filter((h) => h.id !== entry.id);
+    writeHistory([entry, ...rest]);
+  }
+  const whenLabel = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+  function drawHistory() {
+    const list = readHistory();
+    const ul = $('history-list');
+    $('history-clear').hidden = list.length === 0;
+    if (!list.length) {
+      ul.replaceChildren(el('li', 'empty', 'No analyses yet. Your last 10 will appear here after you run one.'));
+      return;
+    }
+    ul.replaceChildren(...list.map((h) => {
+      const li = el('li');
+      const open = el('button', 'h-date', whenLabel(h.at));
+      open.type = 'button';
+      open.disabled = state.running;
+      open.title = state.running ? 'Available when the current analysis finishes' : 'Open this analysis';
+      open.addEventListener('click', () => openHistory(h.id));
+      const words = countWords(h.facts?.essay || '');
+      li.append(open, el('span', 'h-info', `${h.meta || 'Essay'} · ${words} words · ${h.facts?.summaryLength || 'medium'} summary`));
+      const rm = el('button', 'link', 'Remove');
+      rm.type = 'button';
+      rm.addEventListener('click', () => { writeHistory(readHistory().filter((x) => x.id !== h.id)); drawHistory(); });
+      li.append(rm);
+      return li;
+    }));
+  }
+
+  function openHistory(id) {
+    const h = readHistory().find((x) => x.id === id);
+    if (!h || state.running) return;
+    state.tabs = h.tabs;
+    state.data = h.data;
+    state.meta = h.meta;
+    state.facts = h.facts;
+    state.currentId = h.id;
+    state.currentAt = h.at;
+    state.started = true;
+    state.active = 'summary';
+    $('out-meta').textContent = `Analysis from ${whenLabel(h.at)}`;
+    updateReportStatus();
+    setMainTab('report');
+    drawTabs();
+    drawOutput();
+  }
+
   // ---------- Run ----------
   function handle(ev) {
     switch (ev.type) {
@@ -288,7 +355,7 @@
         showError($('run-error'), ev.error);
         if (['waiting', 'running'].includes(state.data.summary?.status)) state.data.summary = { status: 'failed', error: ev.error };
         break;
-      case 'done': setRunning(false); return true;
+      case 'done': setRunning(false); saveHistory(); return true;
     }
     drawTabs();
     drawOutput();
@@ -298,12 +365,13 @@
   // The two main tabs. The Report tab shows a dot while an analysis is running or after it has finished.
   function setMainTab(name) {
     state.mainTab = name;
-    for (const t of ['essay', 'report']) {
+    for (const t of ['essay', 'report', 'history']) {
       const tab = $('mt-' + t);
       tab.setAttribute('aria-selected', String(t === name));
       tab.tabIndex = t === name ? 0 : -1;
       $('view-' + t).hidden = t !== name;
     }
+    if (name === 'history') drawHistory();
     window.scrollTo({ top: 0 });
   }
 
@@ -313,6 +381,7 @@
 
   function setRunning(on) {
     state.running = on;
+    if (state.mainTab === 'history') drawHistory();
     $('submit').disabled = on;
     $('stop').hidden = !on;
     updateReportStatus();
@@ -321,7 +390,7 @@
   // Clears the previous report so nothing stale shows when a new analysis starts.
   function resetReport() {
     // Keep the previous report so it can be restored if the request is refused before any results arrive.
-    state.prev = state.tabs.length ? { tabs: state.tabs, data: state.data, active: state.active, meta: state.meta } : null;
+    state.prev = state.tabs.length ? { tabs: state.tabs, data: state.data, active: state.active, meta: state.meta, facts: state.prevFacts, currentId: state.prevId, currentAt: state.prevAt } : null;
     state.started = false;
     state.tabs = [];
     state.data = {};
@@ -426,7 +495,12 @@
       wordLimit: limitInput.value,
     };
     state.meta = currentType().label + ($('college').value.trim() ? ` · ${$('college').value.trim()}` : '');
+    state.prevFacts = state.facts;
     state.facts = { type: payload.type, length: payload.length, prompt: payload.prompt, college: payload.college, wordLimit: payload.wordLimit, essay, summaryLength: payload.length };
+    state.prevId = state.currentId; state.prevAt = state.currentAt;
+    state.currentAt = new Date().toISOString();
+    state.currentId = String(Date.now());
+    $('out-meta').textContent = '';
     state.controller = new AbortController();
     resetReport();
     setMainTab('report');
@@ -469,14 +543,17 @@
   $('file-remove').addEventListener('click', () => setFile(null));
   $('clear').addEventListener('click', () => { setFile(null); essayBox.value = ''; updateCount(); showError($('form-error'), ''); essayBox.focus(); });
   $('form').addEventListener('submit', submit);
-  for (const t of ['essay', 'report']) $('mt-' + t).addEventListener('click', () => setMainTab(t));
+  for (const t of ['essay', 'report', 'history']) $('mt-' + t).addEventListener('click', () => setMainTab(t));
   $('mt-essay').parentElement.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-      const next = state.mainTab === 'essay' ? 'report' : 'essay';
+      const order = ['essay', 'report', 'history'];
+      const step = e.key === 'ArrowRight' ? 1 : -1;
+      const next = order[(order.indexOf(state.mainTab) + step + order.length) % order.length];
       setMainTab(next);
       $('mt-' + next).focus();
     }
   });
+  $('history-clear').addEventListener('click', () => { if (confirm('Remove all saved analyses from this browser?')) { writeHistory([]); drawHistory(); } });
   $('stop').addEventListener('click', () => { state.controller?.abort(); setRunning(false); });
 
   $('copy').addEventListener('click', async (e) => {
