@@ -369,3 +369,18 @@ test('inlineForSummary leaves out paragraph text, flags unreviewed parts, and ha
   assert.match(text, /Section 2:\n- Role: r/);
   assert.ok(!text.includes('SECRET PARAGRAPH TEXT'));
 });
+
+test('the summary streams as summary_delta events, which add up to the final text', async () => {
+  const events = [];
+  const reports = ANALYZERS.map((a) => ({ id: a.id, name: a.name, reviewer: a.reviewer, text: `analysis ${a.id}` }));
+  const complete = async ({ onText, onRestart }) => {
+    onRestart?.();
+    for (const part of ['Overall ', 'Evaluation ', 'text.']) onText(part);
+    return 'Overall Evaluation text.';
+  };
+  await runSummary({ complete, summarizer: { system: 'SUM' }, reports, input: { ...input(), wordCount: 60 }, inline: null, emit: (e) => events.push(e) });
+  const deltas = events.filter((e) => e.type === 'summary_delta').map((e) => e.text).join('');
+  assert.strictEqual(deltas, 'Overall Evaluation text.');
+  const types = events.map((e) => e.type);
+  assert.ok(types.indexOf('summary_delta') < types.indexOf('summary'));
+});

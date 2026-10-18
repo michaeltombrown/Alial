@@ -107,6 +107,17 @@
     </section>
   </main>
 
+  <dialog id="detailed-modal" class="modal" aria-labelledby="detailed-title">
+    <form method="dialog">
+      <h2 id="detailed-title">Detailed summary takes longer</h2>
+      <p>A Detailed summary adds a couple of minutes to the final analysis output. Choose Short or Medium if you want results sooner.</p>
+      <div class="actions">
+        <button value="cancel" class="ghost">Go back</button>
+        <button value="ok" class="primary" autofocus>Use Detailed</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="/vendor/marked.js"></script>
   <script src="/vendor/purify.js"></script>
   <script src="/vendor/mammoth.js"></script>

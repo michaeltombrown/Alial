@@ -144,10 +144,11 @@
   // The text a tab contributes to Copy and Download.
   const tabText = (id) => {
     const d = state.data[id];
+    if (d.status === 'streaming') return '';
     return d.paragraphs ? inlineToMarkdown(d) : d.text || '';
   };
 
-  const statusWord = { done: 'Done', running: 'Working', waiting: 'Waiting', failed: 'Could not finish' };
+  const statusWord = { streaming: 'Working', done: 'Done', running: 'Working', waiting: 'Waiting', failed: 'Could not finish' };
 
   function drawOutput() {
     const out = $('out');
@@ -163,6 +164,7 @@
     if (d.paragraphs) out.append(renderInline(d));
     else if (d.text) {
       out.append(render(d.text));
+      if (d.status === 'streaming') out.append(el('p', 'placeholder pending', 'Still writing'));
       if (d.truncated) {
         const cut = el('div', 'notice warn');
         cut.append(el('strong', '', 'This summary was cut off. '), document.createTextNode('It reached the length limit before finishing. Choose a shorter summary length and submit again.'));
@@ -242,6 +244,26 @@
     return parts.join('\n\n---\n\n');
   }
 
+  // ---------- Summary length ----------
+  // Detailed adds a couple of minutes, so ask before accepting it. Going back restores the previous choice.
+  let lastLength = 'medium';
+  function wireLengthWarning() {
+    const modal = $('detailed-modal');
+    for (const r of document.querySelectorAll('input[name=length]')) {
+      r.addEventListener('change', () => {
+        if (r.value !== 'detailed') { lastLength = r.value; return; }
+        if (typeof modal.showModal !== 'function') return;
+        modal.returnValue = '';
+        modal.showModal();
+      });
+    }
+    modal.addEventListener('close', () => {
+      if (modal.returnValue === 'ok') { lastLength = 'detailed'; return; }
+      document.querySelector(`input[name=length][value=${lastLength}]`).checked = true;
+    });
+  }
+  wireLengthWarning();
+
   // ---------- Run ----------
   function handle(ev) {
     switch (ev.type) {
@@ -254,6 +276,12 @@
         state.data.inline = ev.status === 'done' ? { status: 'done', arc: ev.arc, paragraphs: ev.paragraphs, synthetic: ev.synthetic } : { status: 'failed', error: ev.error };
         break;
       case 'summary_start': state.data.summary = { status: 'running' }; break;
+      case 'summary_delta': {
+        const cur = state.data.summary || {};
+        state.data.summary = { status: 'streaming', text: (cur.status === 'streaming' ? cur.text : '') + ev.text };
+        break;
+      }
+      case 'summary_reset': state.data.summary = { status: 'running' }; break;
       case 'summary': state.data.summary = { status: 'done', text: ev.text, truncated: Boolean(ev.truncated), unverifiedQuotes: ev.unverifiedQuotes || [] }; break;
       case 'summary_error': state.data.summary = { status: 'failed', error: ev.error, retry: true }; break;
       case 'error':

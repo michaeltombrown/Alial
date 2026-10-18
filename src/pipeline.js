@@ -166,7 +166,23 @@ export async function runSummary({ complete, summarizer, reports, input, inline,
   emit({ type: 'summary_start', reviewersUsed: reports.filter((r) => !r.error).length });
   try {
     let truncated = false;
+    // Stream the text to the browser as it is written, in small batches. A retry starts the text over.
+    let pending = '';
+    let lastFlush = 0;
+    const flush = () => {
+      if (pending) emit({ type: 'summary_delta', text: pending });
+      pending = '';
+      lastFlush = Date.now();
+    };
     const text = await complete({
+      onText: (t) => {
+        pending += t;
+        if (Date.now() - lastFlush > 120) flush();
+      },
+      onRestart: () => {
+        pending = '';
+        emit({ type: 'summary_reset' });
+      },
       system: summarizer.system,
       user: summarizerMessage(reports, input.length, input, inline),
       signal,
@@ -175,6 +191,7 @@ export async function runSummary({ complete, summarizer, reports, input, inline,
       onStop: (reason) => { truncated = reason === 'max_tokens'; },
     });
     const sources = [input.essay, input.prompt || '', ...reports.filter((r) => !r.error).map((r) => r.text), inlineForSummary(inline)];
+    flush();
     emit({ type: 'summary', text, truncated, unverifiedQuotes: findUnverifiedQuotes(text, sources) });
     return text;
   } catch (err) {

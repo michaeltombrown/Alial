@@ -251,9 +251,13 @@ test('worker: /api/summarize rewrites only the summary from the analyses it is g
   assert.strictEqual(res.status, 200);
   const events = (await res.text()).trim().split('\n').map((l) => JSON.parse(l));
   await c.done();
-  assert.deepStrictEqual(events.map((e) => e.type), ['summary_start', 'summary', 'done']);
-  assert.ok(events[1].text.includes('## Summary'));
-  assert.deepStrictEqual(events[1].unverifiedQuotes, []);
+  const types = events.map((e) => e.type);
+  assert.deepStrictEqual([types[0], types.at(-2), types.at(-1)], ['summary_start', 'summary', 'done']);
+  assert.ok(types.slice(1, -2).every((t) => t === 'summary_delta'));
+  const summary = events.at(-2);
+  assert.ok(summary.text.includes('## Summary'));
+  assert.strictEqual(events.filter((e) => e.type === 'summary_delta').map((e) => e.text).join(''), summary.text);
+  assert.deepStrictEqual(summary.unverifiedQuotes, []);
   assert.strictEqual((await worker.fetch(new Request('https://alial.test/api/summarize'), env(), ctx())).status, 405);
   const bad = new Request('https://alial.test/api/summarize', { method: 'POST', body: JSON.stringify({ type: 'common-app', essay, reports: [] }) });
   assert.strictEqual((await worker.fetch(bad, env(), ctx())).status, 400);
