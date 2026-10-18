@@ -1,3 +1,4 @@
+(() => {
 // Minimal RTF to plain text. Skips destination groups (font/color/list tables, \* groups)
 // and decodes \par, \tab, \'xx (cp1252) and \uN escapes. Enough for essays saved from
 // TextEdit, Pages, Word, or Google Docs.
@@ -61,4 +62,5 @@ function rtfToText(src) {
   return out;
 }
 
-module.exports = { rtfToText };
+window.rtfToText = rtfToText;
+})();

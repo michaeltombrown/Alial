@@ -1,6 +1,6 @@
 // Essay types students currently encounter when applying to college.
 // `limit` is the commonly published word limit; the student can override it.
-const ESSAY_TYPES = [
+export const ESSAY_TYPES = [
   {
     id: 'common-app',
     label: 'Common App Personal Statement',
@@ -84,4 +84,4 @@ const ESSAY_TYPES = [
 
 const byId = new Map(ESSAY_TYPES.map((t) => [t.id, t]));
 
-module.exports = { ESSAY_TYPES, getEssayType: (id) => byId.get(id) };
+export const getEssayType = (id) => byId.get(id);

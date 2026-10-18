@@ -1,0 +1,4 @@
+# Local development only (never committed). Copy to .dev.vars
+ALIAL_MOCK=1
+# ANTHROPIC_API_KEY=
+# ALIAL_MODEL=claude-sonnet-5-5

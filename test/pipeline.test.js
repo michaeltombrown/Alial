@@ -1,12 +1,11 @@
-const test = require('node:test');
-const assert = require('node:assert');
-const { runPipeline, analyzerMessage, summarizerMessage } = require('../src/pipeline');
-const { ANALYZERS, SUMMARIZER } = require('../src/analyzers');
-const { getEssayType, ESSAY_TYPES } = require('../src/essayTypes');
-const { rtfToText } = require('../src/rtf');
+import test from 'node:test';
+import assert from 'node:assert';
+import { runPipeline, analyzerMessage, summarizerMessage } from '../src/pipeline.js';
+import { ANALYZERS, SUMMARIZER } from '../src/analyzers.js';
+import { getEssayType, ESSAY_TYPES } from '../src/essayTypes.js';
 
 const essay = 'word '.repeat(60).trim();
-const input = () => ({ type: getEssayType('common-app'), essay, wordLimit: 650, prompt: '', college: 'Brown' });
+const input = () => ({ type: getEssayType('common-app'), essay, wordLimit: 650, prompt: '', college: 'Brown', length: 'medium' });
 
 test('there are four analyzers with distinct, non-empty prompts', () => {
   assert.strictEqual(ANALYZERS.length, 4);
@@ -25,8 +24,7 @@ test('runs all four analyzers then the summarizer, in that order', async () => {
     return `out-${calls.length}`;
   };
   const events = [];
-  const summarizer = { system: 'SUM' };
-  const { summary, reports } = await runPipeline({ complete, summarizer, input: input(), emit: (e) => events.push(e) });
+  const { summary, reports } = await runPipeline({ complete, summarizer: { system: 'SUM' }, input: input(), emit: (e) => events.push(e) });
 
   assert.strictEqual(calls.length, 5);
   assert.strictEqual(calls[4].system, 'SUM');
@@ -52,12 +50,19 @@ test('continues with remaining reviewers when one fails', async () => {
 });
 
 test('fails when every reviewer fails', async () => {
-  await assert.rejects(runPipeline({ complete: async () => { throw new Error('x'); }, summarizer: { system: 'S' }, input: input() }), /All reviewers failed/);
+  await assert.rejects(
+    runPipeline({ complete: async () => { throw new Error('x'); }, summarizer: { system: 'S' }, input: input() }),
+    /All reviewers failed/,
+  );
 });
 
 test('flags essays over the word limit', () => {
-  const msg = analyzerMessage({ ...input(), wordLimit: 20, wordCount: 60 });
-  assert.match(msg, /40 OVER the limit/);
+  assert.match(analyzerMessage({ ...input(), wordLimit: 20, wordCount: 60 }), /40 OVER the limit/);
+});
+
+test('the student\'s prompt and context reach every reviewer', () => {
+  const msg = analyzerMessage({ ...input(), prompt: 'Why do you want to attend Brown?', wordCount: 60 });
+  assert.match(msg, /Application prompt and context from the student: Why do you want to attend Brown\?/);
 });
 
 test('summarizer receives only the analyses and the length choice, never the essay', () => {
@@ -70,13 +75,3 @@ test('summarizer receives only the analyses and the length choice, never the ess
 });
 
 test('summarizer is the Summary Generator prompt', () => assert.match(SUMMARIZER.system, /Summary Generator/));
-
-test('rtfToText skips tables and keeps paragraphs and unicode', () => {
-  const rtf = "{\\rtf1\\ansi{\\fonttbl\\f0 Times;}{\\colortbl;\\red0;}\\f0 Hello \\u8212? world\\par It\\'92s me\\\nNext}";
-  assert.strictEqual(rtfToText(rtf).replace(/\n+/g, '|'), "Hello — world|It’s me|Next");
-});
-
-test('the student\'s prompt and context reach every reviewer', () => {
-  const msg = analyzerMessage({ ...input(), prompt: 'Why do you want to attend Brown?', wordCount: 60 });
-  assert.match(msg, /Application prompt and context from the student: Why do you want to attend Brown\?/);
-});

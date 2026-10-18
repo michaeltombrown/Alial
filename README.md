@@ -1,64 +1,53 @@
 # Alial
 
-College essay analysis, review, and suggestions. Upload or paste an application essay, pick its type, and Alial has four independent reviewers analyze it, then the Summary Generator summarizes those four analyses at the length the user chooses.
-
-## How it works
+College essay analysis, review, and suggestions. A student pastes or uploads an application essay, picks its type, and adds the question being answered. Four independent analyses review the essay, then the Summary Generator summarizes those four analyses at the length the student chooses (Short, Medium, or Detailed).
 
 ```
-essay + type (+ optional prompt, college, word limit)
-        │
-        ├─► Rubric Reader                 prompts/rubric-rater.txt        (A/B/C, 0 to 18)
-        ├─► Admissions Grader             prompts/admissions-grader.txt   (18 categories, 1 to 10)
-        ├─► Selective-College Evaluator   prompts/writer-grader-master.txt(18 categories, /180)
-        └─► Story Coach                   prompts/common-app-master.txt   (voice and narrative craft)
-                     │  (run in parallel)
-                     ▼
-              Summary Generator  ──►  Summary tab  (the four analyses are tabs beside it)
+essay + type + question/context (+ optional college, word limit)
+        |
+        |-- Rubric Reader                 prompts/rubric-rater.txt          (A/B/C, 0 to 18)
+        |-- Admissions Grader             prompts/admissions-grader.txt     (18 categories, 1 to 10)
+        |-- Selective-College Evaluator   prompts/writer-grader-master.txt  (18 categories, /180)
+        `-- Story Coach                   prompts/common-app-master.txt     (voice and narrative craft)
+                     |  (run in parallel)
+                     v
+        Summary Generator  prompts/summarizer.txt  ->  Summary tab
+        (the four full analyses are tabs beside it)
 ```
 
-If one reviewer fails, the summarizer works with the rest. If all fail, the user sees an error.
+The summarizer receives only the four analyses and the chosen length, never the essay. If one analysis fails, the summary is built from the rest. If all fail, the student sees an error.
 
-Supported essay types: Common App, Coalition, UC Personal Insight Questions, several supplemental types (why this college, community, activity, short answer), scholarship, transfer, and other. Each sets a default word limit and tells the reviewers what to focus on (`src/essayTypes.js`). Uploads accept `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, or paste text.
+## How it is built
 
-## Run it
+A Cloudflare Worker (`src/worker.js`) with static assets (`public/`). The Worker only handles `/api/*`; everything else is served as a static file.
+
+| Path | Purpose |
+|---|---|
+| `src/worker.js` | `GET /api/config`, `POST /api/analyze` (streams progress as NDJSON), per-visitor rate limit |
+| `src/pipeline.js` | Runs the four analyses in parallel, then the summarizer |
+| `src/model.js` | Anthropic Messages API client (streaming, retries) and an offline mock |
+| `src/validate.js`, `src/essayTypes.js` | Input checks and the essay type presets |
+| `src/generated/prompts.js` | Generated from `prompts/*.txt` |
+| `public/` | The interface. Word and RTF uploads are read in the browser; PDFs are not supported (paste the text) |
+| `wrangler.jsonc` | Worker name `alial`, assets, rate limit (4 analyses per minute per visitor) |
+
+Uploaded files are read in the browser and the essay text is sent to the Worker. Nothing is stored.
+
+## Deploy (Cloudflare)
+
+The `alial` Worker is connected to this repository with Workers Builds, so a push to `main` runs `npx wrangler deploy`.
+
+**One-time setup:** in the Cloudflare dashboard open Workers & Pages > `alial` > Settings > Variables and Secrets > Add, choose type **Secret**, name `ANTHROPIC_API_KEY`, paste your key, and deploy. Optional: add `ALIAL_MODEL` (default `claude-sonnet-5-5`).
+
+Each essay makes five paid model calls. The rate limit in `wrangler.jsonc` is per location and per visitor; for stronger protection, put the Worker behind Cloudflare Access.
+
+## Develop
 
 ```bash
 npm install
-cp .env.example .env     # add your ANTHROPIC_API_KEY
-npm start                # http://localhost:3000
+cp .dev.vars.example .dev.vars   # ALIAL_MOCK=1 gives placeholder output without an API key
+npm run dev                      # http://localhost:8787
+npm test
 ```
 
-No key yet? `npm run dev` starts in mock mode with placeholder output so you can try the interface.
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | none | Required unless `ALIAL_MOCK=1` |
-| `ALIAL_MODEL` | `claude-sonnet-5-5` | Model used for reviewers and summarizer |
-| `PORT` | `3000` | |
-| `ALIAL_MAX_CONCURRENT` | `4` | Max simultaneous analyses before returning "busy" |
-
-## The summarizer prompt
-
-`prompts/summarizer.txt` ("Summary Generator - AI Text Summarizer") runs after the four analyses. It receives only the four analyses (never the essay) plus the length the user picked (Short, Medium, or Detailed), and its Summary / Key Takeaways / Conclusion output appears in the **Summary** tab. The four full analyses sit in their own tabs next to it. The message that carries the analyses lives in `summarizerMessage()` in `src/pipeline.js`.
-
-## Deploy
-
-The repo includes a `Dockerfile` and a Render Blueprint (`render.yaml`). On Render: New > Blueprint, select this repo, set `ANTHROPIC_API_KEY`. Any host that runs a Node 22 server or a Docker image works: set `ANTHROPIC_API_KEY`, and the app listens on `PORT`. Neither file has been test-built yet.
-
-## Layout
-
-```
-server.js            Express app: /api/config, /api/analyze (streams progress as NDJSON)
-src/pipeline.js      Runs the four reviewers in parallel, then the summarizer
-src/analyzers.js     Loads prompts; defines the four reviewers
-src/model.js         Anthropic client (and the offline mock)
-src/extract.js       Text extraction from uploads (docx, pdf, rtf, txt)
-public/              The single-page interface
-prompts/             The system prompts
-test/                npm test
-```
-
-## Notes
-
-- Essays are processed in memory and never written to disk or a database.
-- There is no login or rate limiting beyond the concurrency cap. Add both before exposing this publicly, since each essay triggers five model calls.
+After editing anything in `prompts/` or upgrading `marked`, `dompurify`, or `mammoth`, run `npm run build` and commit the result. The Worker build runs only `wrangler deploy`, so generated files (`src/generated/`, `public/vendor/`) are committed.

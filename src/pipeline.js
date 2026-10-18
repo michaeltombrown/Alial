@@ -1,5 +1,5 @@
-const { ANALYZERS } = require('./analyzers');
-const { countWords } = require('./extract');
+import { ANALYZERS } from './analyzers.js';
+import { countWords } from './text.js';
 
 function describeContext({ type, prompt, college, wordLimit, wordCount }) {
   const lines = [
@@ -12,7 +12,7 @@ function describeContext({ type, prompt, college, wordLimit, wordCount }) {
   return lines.join('\n');
 }
 
-function analyzerMessage(input) {
+export function analyzerMessage(input) {
   return [
     'A student has submitted the essay below. Evaluate it now, following your instructions in full. Do not ask for more information first.',
     '',
@@ -27,7 +27,7 @@ function analyzerMessage(input) {
 }
 
 // Summary length is the user's choice; the Summary Generator prompt adapts to it.
-const SUMMARY_LENGTHS = {
+export const SUMMARY_LENGTHS = {
   short: 'Short: a Summary of 2 to 3 sentences, 3 Key Takeaways, and a one-sentence Conclusion.',
   medium: 'Medium: a Summary of one short paragraph, 4 to 6 Key Takeaways, and a brief Conclusion.',
   detailed:
@@ -35,7 +35,7 @@ const SUMMARY_LENGTHS = {
 };
 
 // The summarizer sees only the four analyses, never the essay itself.
-function summarizerMessage(reports, length = 'medium') {
+export function summarizerMessage(reports, length = 'medium') {
   const text = reports
     .filter((r) => !r.error)
     .map((r) => `${r.name} analysis:\n\n${r.text}`)
@@ -47,7 +47,7 @@ function summarizerMessage(reports, length = 'medium') {
  * Runs every analyzer in parallel, then the summarizer over their results.
  * `emit` receives progress events so a UI can stream them.
  */
-async function runPipeline({ complete, summarizer, input, emit = () => {}, signal }) {
+export async function runPipeline({ complete, summarizer, input, emit = () => {}, signal }) {
   input = { ...input, wordCount: countWords(input.essay) };
   emit({ type: 'start', analyzers: ANALYZERS.map(({ id, name, tagline }) => ({ id, name, tagline })) });
 
@@ -77,4 +77,3 @@ async function runPipeline({ complete, summarizer, input, emit = () => {}, signa
   return { reports, summary };
 }
 
-module.exports = { runPipeline, analyzerMessage, summarizerMessage, SUMMARY_LENGTHS };

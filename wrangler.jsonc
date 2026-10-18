@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "alial",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-13",
+  "keep_vars": true,
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // Only the API runs Worker code; pages and scripts are served as static assets.
+    "run_worker_first": ["/api/*"]
+  },
+  // Per-visitor limit on analyses (each one makes five paid model calls). Period must be 10 or 60.
+  "ratelimits": [
+    {
+      "name": "LIMITER",
+      "namespace_id": "7421",
+      "simple": { "limit": 4, "period": 60 }
+    }
+  ]
+}

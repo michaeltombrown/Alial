@@ -115,6 +115,7 @@
   // ---------- Run ----------
   function handle(ev) {
     switch (ev.type) {
+      case 'ping': return false;
       case 'start': beginRun(ev.analyzers); break;
       case 'analyzer':
         state.data[ev.id] = ev.status === 'done' ? { status: 'done', text: ev.text } : { status: 'failed', error: ev.error };
@@ -152,27 +153,46 @@
     if (!finished && !state.controller.signal.aborted) showError($('run-error'), 'The connection ended before your report was ready. Please try again.');
   }
 
+  async function readEssayFile(file) {
+    const name = file.name.toLowerCase();
+    if (file.size > 5 * 1024 * 1024) throw new Error('That file is too large (5 MB max).');
+    if (name.endsWith('.docx')) return (await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })).value.trim();
+    if (name.endsWith('.rtf')) return rtfToText(await file.text()).replace(/\n{3,}/g, '\n\n').trim();
+    if (/\.(txt|md)$/.test(name)) return (await file.text()).trim();
+    throw new Error('Upload a .docx, .txt, or .rtf file, or paste your essay.');
+  }
+
   async function submit(e) {
     e.preventDefault();
     const err = $('form-error');
     showError(err, '');
     showError($('run-error'), '');
-    const fd = new FormData();
-    fd.append('type', typeSel.value);
-    fd.append('length', document.querySelector('input[name=length]:checked').value);
-    fd.append('prompt', $('prompt').value);
-    fd.append('college', $('college').value);
-    fd.append('wordLimit', limitInput.value);
-    if (state.file) fd.append('file', state.file);
-    else {
-      if (countWords(essayBox.value) < 25) return showError(err, 'Paste your full essay or upload a file (at least 25 words).');
-      fd.append('essay', essayBox.value);
+    let essay;
+    try {
+      essay = state.file ? await readEssayFile(state.file) : essayBox.value.trim();
+    } catch (ex) {
+      return showError(err, ex.message || 'Could not read that file. Try pasting the text instead.');
     }
+    if (countWords(essay) < 25) return showError(err, 'Add your full essay (at least 25 words).');
+
+    const payload = {
+      type: typeSel.value,
+      essay,
+      length: document.querySelector('input[name=length]:checked').value,
+      prompt: $('prompt').value,
+      college: $('college').value,
+      wordLimit: limitInput.value,
+    };
     state.meta = currentType().label + ($('college').value.trim() ? ` · ${$('college').value.trim()}` : '');
     state.controller = new AbortController();
     setRunning(true);
     try {
-      const res = await fetch('/api/analyze', { method: 'POST', body: fd, signal: state.controller.signal });
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: state.controller.signal,
+      });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Something went wrong. Please try again.');
       await readStream(res);
     } catch (ex) {

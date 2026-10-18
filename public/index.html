@@ -55,10 +55,10 @@
               <label><input type="radio" name="length" value="medium" checked><span>Medium</span></label>
               <label><input type="radio" name="length" value="detailed"><span>Detailed</span></label>
             </div>
-            <label class="file"><input type="file" id="file" accept=".docx,.pdf,.txt,.rtf,.md"><span>Upload a file</span></label>
+            <label class="file"><input type="file" id="file" accept=".docx,.txt,.rtf,.md"><span>Upload a file</span></label>
             <button class="link" id="clear" type="button">Clear</button>
           </div>
-          <p class="hint">Length applies to the summary. Word, PDF, text, or RTF uploads, 5 MB max.</p>
+          <p class="hint">Length applies to the summary. Word (.docx), text, or RTF uploads, 5 MB max. For a PDF, paste the text.</p>
 
           <details class="more">
             <summary>College and word limit <span class="opt">(optional)</span></summary>
@@ -100,6 +100,8 @@
 
   <script src="/vendor/marked.js"></script>
   <script src="/vendor/purify.js"></script>
+  <script src="/vendor/mammoth.js"></script>
+  <script src="/rtf.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
