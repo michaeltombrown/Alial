@@ -2,6 +2,7 @@ import { getEssayType } from './essayTypes.js';
 import { SUMMARY_LENGTHS } from './pipeline.js';
 import { ANALYZERS } from './analyzers.js';
 import { countWords } from './text.js';
+import { sanitizeInline } from './inline.js';
 
 export const MAX_CHARS = 30000;
 
@@ -36,7 +37,7 @@ export function parseInput(body) {
 
 const MAX_REPORT_CHARS = 80000;
 
-// Validates POST /api/summarize: the facts about the submission plus the analyses already shown to the student.
+// Validates POST /api/summarize: the essay and context plus the analyses and in-line review already shown to the student.
 export function parseSummaryRequest(body) {
   if (!body || typeof body !== 'object') throw new UserError('Send the analyses as JSON.');
   const type = getEssayType(body.type);
@@ -56,16 +57,22 @@ export function parseSummaryRequest(body) {
   }
   if (!reports.some((r) => !r.error)) throw new UserError('Send at least one completed analysis.');
 
+  const essay = typeof body.essay === 'string' ? body.essay.trim() : '';
+  if (countWords(essay) < 25) throw new UserError('Send the essay with the analyses.');
+  if (essay.length > MAX_CHARS) throw new UserError(`Essay is too long (limit ${MAX_CHARS.toLocaleString('en-US')} characters).`);
+
   const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
   return {
     input: {
       type,
+      essay,
       wordLimit: Math.min(Math.max(parseInt(body.wordLimit, 10) || type.limit, 1), 5000),
-      wordCount: Math.min(Math.max(parseInt(body.wordCount, 10) || 0, 0), 100000),
+      wordCount: countWords(essay),
       length: SUMMARY_LENGTHS[body.length] ? body.length : 'medium',
       prompt: str(body.prompt, 3000),
       college: str(body.college, 200),
     },
     reports,
+    inline: sanitizeInline(body.inline),
   };
 }

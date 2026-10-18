@@ -3,6 +3,7 @@ import { countWords } from './text.js';
 import { KB, RULES } from './generated/kb.js';
 import { splitParagraphs, inlineMessage, parseInlineReview, missingParts } from './inline.js';
 import { describeFailure } from './model.js';
+import { findUnverifiedQuotes } from './quotes.js';
 
 const NO_PROMPT = 'Not supplied. Proceed with reasonable assumptions and state them.';
 
@@ -72,13 +73,35 @@ function submissionFacts({ type, prompt, college, wordLimit, wordCount }) {
     `Word count: ${wordCount} against an application default limit of ${wordLimit}${wordCount > wordLimit ? ` (${wordCount - wordLimit} over)` : ''}`,
     `Prompt or context supplied by the student: ${prompt || 'None supplied'}`,
   ];
-  // School-specific analysis is enabled only for the Why This College type.
-  if (college && type.id === 'why-college') lines.push(`College named by the student: ${college}`);
+  if (college) lines.push(`College named by the student: ${college}`);
   return lines.join('\n');
 }
 
-// The summarizer sees only the four analyses and the submission facts, never the essay itself.
-export function summarizerMessage(reports, length = 'medium', input) {
+// The in-line review as the summarizer reads it. Original paragraph text is left out: the summarizer has the essay itself.
+export function inlineForSummary(inline) {
+  if (!inline || inline.status !== 'done') return 'The In-Line Review is not available for this essay.';
+  const unit = inline.synthetic ? 'Section' : 'Paragraph';
+  const lines = [`How the essay reads as one piece: ${inline.arc || 'not stated'}`];
+  for (const p of inline.paragraphs) {
+    if (!p.reviewed) {
+      lines.push('', `${unit} ${p.n}: not reviewed.`);
+      continue;
+    }
+    lines.push(
+      '',
+      `${unit} ${p.n}:`,
+      `- Role: ${p.role || 'not stated'}`,
+      `- How it connects: ${p.flow || 'not stated'}`,
+      ...(p.focus ? [`- Passage it points to: "${p.focus}"`] : []),
+      ...p.issues.map((i) => `- Issue: ${i}`),
+      ...p.suggestions.map((i) => `- Suggestion: ${i}`),
+    );
+  }
+  return lines.join('\n');
+}
+
+// The summarizer reads the essay and context first, then the four analyses and the in-line review. These are its only sources.
+export function summarizerMessage(reports, length = 'medium', input, inline) {
   const text = reports
     .map((r) =>
       r.error
@@ -89,7 +112,13 @@ export function summarizerMessage(reports, length = 'medium', input) {
   return [
     `Requested length: ${SUMMARY_LENGTHS[length] || SUMMARY_LENGTHS.medium}`,
     '',
-    ...(input ? ['<submission_facts>', submissionFacts(input), '</submission_facts>', ''] : []),
+    'Read the essay and the context first, then the reviewer reports and the In-Line Review. These four sources are the only information you may use.',
+    '',
+    ...(input ? ['<submission_facts>', submissionFacts(input), '</submission_facts>', '', '<essay>', input.essay, '</essay>', ''] : []),
+    '<inline_review>',
+    inlineForSummary(inline),
+    '</inline_review>',
+    '',
     '<text>',
     text,
     '</text>',
@@ -128,14 +157,16 @@ async function runInline({ complete, inline, input, paragraphs, synthetic, signa
 }
 
 /**
- * Writes the summary from the four analyses. Emits summary_start, then summary or summary_error. Never throws except on abort.
- * Rate limits and overloads are retried patiently because this is the largest request of the run.
+ * Writes the summary from the essay, the context, the four analyses, and the in-line review: its only sources.
+ * Emits summary_start, then summary (with any long quoted passages that match none of the sources) or summary_error.
+ * Never throws except on abort. Rate limits and overloads are retried patiently because this is the largest request of the run.
  */
-export async function runSummary({ complete, summarizer, reports, input, emit = () => {}, signal }) {
+export async function runSummary({ complete, summarizer, reports, input, inline, emit = () => {}, signal }) {
   emit({ type: 'summary_start', reviewersUsed: reports.filter((r) => !r.error).length });
   try {
-    const text = await complete({ system: summarizer.system, user: summarizerMessage(reports, input.length, input), signal, retries: 5 });
-    emit({ type: 'summary', text });
+    const text = await complete({ system: summarizer.system, user: summarizerMessage(reports, input.length, input, inline), signal, retries: 5 });
+    const sources = [input.essay, input.prompt || '', ...reports.filter((r) => !r.error).map((r) => r.text), inlineForSummary(inline)];
+    emit({ type: 'summary', text, unverifiedQuotes: findUnverifiedQuotes(text, sources) });
     return text;
   } catch (err) {
     if (signal?.aborted) throw err;
@@ -147,7 +178,8 @@ export async function runSummary({ complete, summarizer, reports, input, emit = 
 
 /**
  * Runs the four analyses and the in-line review in parallel. Results are shown in this order: the four analyses as they
- * finish, then the in-line review, then the summary, which waits for everything and is written from the four analyses only.
+ * finish, then the in-line review, then the summary, which waits for everything and is written from the essay, the context,
+ * the four analyses, and the in-line review only.
  * `emit` receives progress events so a UI can stream them.
  */
 export async function runPipeline({ complete, summarizer, input, emit = () => {}, signal, inline = INLINE_REVIEW }) {
@@ -180,12 +212,13 @@ export async function runPipeline({ complete, summarizer, input, emit = () => {}
     }),
   );
 
-  emit({ type: 'inline', ...(await inlinePromise) });
+  const inlineResult = await inlinePromise;
+  emit({ type: 'inline', ...inlineResult });
 
   const ok = reports.filter((r) => !r.error);
   if (ok.length === 0) throw new Error('All reviewers failed. Please try again.');
 
-  const summary = await runSummary({ complete, summarizer, reports, input, emit, signal });
+  const summary = await runSummary({ complete, summarizer, reports, input, inline: inlineResult, emit, signal });
   emit({ type: 'done' });
   return { reports, summary };
 }

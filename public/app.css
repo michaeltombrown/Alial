@@ -109,6 +109,9 @@ select:focus, input:focus, textarea:focus, button:focus-visible, .seg input:focu
 
 .notice { font-size: 14px; border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; }
 .notice.err { background: var(--err-soft); color: var(--err); }
+.notice.warn { background: var(--err-soft); color: var(--ink); border: 1px solid var(--err); margin-top: 16px; }
+.notice.warn ul { margin: 6px 0 0; padding-left: 1.2em; }
+.notice.warn li { margin: 3px 0; font-style: italic; }
 .notice.info { background: var(--accent-soft); color: var(--ink); }
 
 /* report tabs */

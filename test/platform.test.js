@@ -119,7 +119,7 @@ test('worker: health endpoint reports the running version\'s features', async ()
   const res = await worker.fetch(new Request('https://alial.test/api/health'), env(), ctx());
   const body = await res.json();
   assert.strictEqual(res.status, 200);
-  assert.ok(body.ok && body.features.includes('in-line-review') && body.features.includes('knowledge-base') && body.features.includes('tabbed-layout'));
+  assert.ok(body.ok && body.features.includes('in-line-review') && body.features.includes('knowledge-base') && body.features.includes('tabbed-layout') && body.features.includes('pdf-download') && body.features.includes('sourced-summary'));
 });
 
 test('worker: streams the analyses, the in-line review, and the summary as NDJSON', async () => {
@@ -226,28 +226,35 @@ test('worker config exposes each type\'s prompt hint', async () => {
 });
 
 test('summary retry request validation', () => {
-  const ok = parseSummaryRequest({ type: 'uc-piq', length: 'short', wordCount: '300', reports: [{ id: 'rubric', text: 'a' }, { id: 'coach', text: 'b' }] });
+  const inlineIn = { arc: 'A', synthetic: true, paragraphs: [{ n: 1, reviewed: true, role: 'r', flow: 'f', issues: ['i'], suggestions: ['s'], focus: 'x', text: 'IGNORED' }] };
+  const ok = parseSummaryRequest({ type: 'uc-piq', length: 'short', essay, reports: [{ id: 'rubric', text: 'a' }, { id: 'coach', text: 'b' }], inline: inlineIn });
   assert.strictEqual(ok.input.length, 'short');
-  assert.strictEqual(ok.input.wordCount, 300);
+  assert.strictEqual(ok.input.essay, essay.trim());
+  assert.strictEqual(ok.input.wordCount, essay.trim().split(/\s+/).length, 'word count comes from the essay, not the client');
+  assert.strictEqual(ok.inline.status, 'done');
+  assert.strictEqual(ok.inline.paragraphs[0].focus, 'x');
+  assert.ok(!('text' in ok.inline.paragraphs[0]), 'the in-line review is stripped to what the summarizer needs');
+  assert.strictEqual(parseSummaryRequest({ type: 'uc-piq', essay, reports: [{ id: 'rubric', text: 'a' }] }).inline, null, 'no in-line review is allowed');
   assert.strictEqual(ok.reports.length, 4);
   assert.strictEqual(ok.reports.filter((r) => !r.error).length, 2, 'analyses that were not sent are treated as missing reviewers');
   assert.deepStrictEqual(ok.reports.map((r) => r.reviewer), [1, 2, 3, 4]);
-  for (const bad of [null, { type: 'x', reports: [] }, { type: 'uc-piq', reports: [] }, { type: 'uc-piq', reports: [{ id: 'nope', text: 'a' }] }, { type: 'uc-piq', reports: [{ id: 'rubric', text: 'a' }, { id: 'rubric', text: 'b' }] }, { type: 'uc-piq', reports: [{ id: 'rubric', text: 'x'.repeat(90000) }] }, { type: 'uc-piq', reports: [{ id: 'rubric', text: '  ' }] }]) {
+  for (const bad of [null, { type: 'x', essay, reports: [] }, { type: 'uc-piq', essay, reports: [] }, { type: 'uc-piq', essay, reports: [{ id: 'nope', text: 'a' }] }, { type: 'uc-piq', essay, reports: [{ id: 'rubric', text: 'a' }, { id: 'rubric', text: 'b' }] }, { type: 'uc-piq', essay, reports: [{ id: 'rubric', text: 'x'.repeat(90000) }] }, { type: 'uc-piq', essay, reports: [{ id: 'rubric', text: '  ' }] }, { type: 'uc-piq', essay: 'too short', reports: [{ id: 'rubric', text: 'a' }] }, { type: 'uc-piq', reports: [{ id: 'rubric', text: 'a' }] }]) {
     assert.throws(() => parseSummaryRequest(bad), UserError);
   }
 });
 
 test('worker: /api/summarize rewrites only the summary from the analyses it is given', async () => {
   const c = ctx();
-  const req = new Request('https://alial.test/api/summarize', { method: 'POST', body: JSON.stringify({ type: 'common-app', length: 'short', wordCount: 90, reports: [{ id: 'rubric', text: 'r' }, { id: 'admissions', text: 'a' }] }) });
+  const req = new Request('https://alial.test/api/summarize', { method: 'POST', body: JSON.stringify({ type: 'common-app', length: 'short', essay, reports: [{ id: 'rubric', text: 'r' }, { id: 'admissions', text: 'a' }], inline: null }) });
   const res = await worker.fetch(req, env(), c);
   assert.strictEqual(res.status, 200);
   const events = (await res.text()).trim().split('\n').map((l) => JSON.parse(l));
   await c.done();
   assert.deepStrictEqual(events.map((e) => e.type), ['summary_start', 'summary', 'done']);
   assert.ok(events[1].text.includes('## Summary'));
+  assert.deepStrictEqual(events[1].unverifiedQuotes, []);
   assert.strictEqual((await worker.fetch(new Request('https://alial.test/api/summarize'), env(), ctx())).status, 405);
-  const bad = new Request('https://alial.test/api/summarize', { method: 'POST', body: JSON.stringify({ type: 'common-app', reports: [] }) });
+  const bad = new Request('https://alial.test/api/summarize', { method: 'POST', body: JSON.stringify({ type: 'common-app', essay, reports: [] }) });
   assert.strictEqual((await worker.fetch(bad, env(), ctx())).status, 400);
   const limited = env({ LIMITER: { limit: async () => ({ success: false }) } });
   assert.strictEqual((await worker.fetch(new Request('https://alial.test/api/summarize', { method: 'POST', body: JSON.stringify({}) }), limited, ctx())).status, 429);
@@ -265,4 +272,46 @@ test('layout: full-width Essay and Report tabs under a fixed header, with the Al
   assert.match(logo, /<svg[\s\S]*M20 17H4M4 17L8 13/);
   assert.match(css, /\.site-header \{[^}]*position: sticky;[^}]*top: 0/);
   assert.ok(!/\.panes\b/.test(css) && !/class="panes"/.test(html), 'no side-by-side panes');
+});
+
+// ---- PDF report
+function loadPdfModule() {
+  const sandbox = {};
+  sandbox.window = sandbox;
+  vm.runInNewContext(readFileSync(new URL('../public/vendor/marked.js', import.meta.url), 'utf8'), sandbox);
+  vm.runInNewContext(readFileSync(new URL('../public/pdf.js', import.meta.url), 'utf8'), sandbox);
+  return sandbox.AlialPdf;
+}
+
+test('pdf: markdown becomes real headings, lists, tables, quotes, and styled runs', () => {
+  const pdf = loadPdfModule();
+  const md = [
+    '## Overall Evaluation', 'A **bold** and *italic* sentence with `code`.', '',
+    '| Reviewer | Native score | Note |', '|---|---|---|', '| 1 | 14/18 | A long explanatory note about how this score was reached |', '',
+    '1. First step', '2. Second step', '', '- Bullet one', '- Bullet two', '', '> A quoted passage', '', '---', '### Smaller heading',
+  ].join('\n');
+  const nodes = pdf.markdownToContent(md);
+  const kinds = [...nodes].map((n) => (n.style ? `heading:${n.style}` : n.table ? (n.table.headerRows ? 'table' : 'quote') : n.ol ? 'ol' : n.ul ? 'ul' : n.canvas ? 'rule' : 'text'));
+  assert.deepStrictEqual(kinds, ['heading:h3', 'text', 'table', 'ol', 'ul', 'quote', 'rule', 'heading:h4']);
+  const para = nodes[1].text;
+  assert.ok(para.some((r) => r.bold && r.text === 'bold') && para.some((r) => r.italics && r.text === 'italic') && para.some((r) => r.background && r.text === 'code'));
+  const widths = nodes[2].table.widths.map((w) => parseFloat(w));
+  assert.ok(Math.abs(widths.reduce((a, b) => a + b, 0) - 100) < 0.5, 'table column widths sum to 100%');
+  assert.ok(widths[2] > widths[0], 'a long text column gets more room than a short one');
+  assert.strictEqual(nodes[3].ol.length, 2);
+});
+
+test('pdf: the document has every section, the essay and context, page numbers, and the logo', () => {
+  const pdf = loadPdfModule();
+  const doc = pdf.buildDoc({
+    title: 't', subtitle: 'Common App Personal Statement', date: 'October 18, 2026',
+    sections: [{ name: 'Summary', angle: 'A synthesis.', markdown: '## Overall Evaluation\n\nText.' }, { name: 'In-Line Review', markdown: '## Paragraph 1 of 2\n\nMore.' }],
+    context: [{ label: 'Essay type', value: 'Common App Personal Statement' }], essay: 'First paragraph.\n\nSecond paragraph.',
+  });
+  const text = JSON.stringify(doc.content);
+  for (const needle of ['Alial report', 'Summary', 'In-Line Review', 'Viewpoint: ', 'Your essay and context', 'First paragraph.', 'Second paragraph.', 'Common App Personal Statement']) assert.ok(text.includes(needle), needle);
+  assert.ok(doc.content.some((n) => n.columns && n.columns[0].svg));
+  assert.strictEqual(doc.content.filter((n) => n.pageBreak).length, 2, 'every section after the first starts a new page');
+  assert.match(JSON.stringify(doc.footer(2, 9)), /Page 2 of 9/);
+  assert.strictEqual(doc.pageSize, 'LETTER');
 });

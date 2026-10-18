@@ -50,4 +50,7 @@ mkdirSync(vendor, { recursive: true });
 copyFileSync(path.join(pkgDir('marked'), 'lib/marked.umd.js'), path.join(vendor, 'marked.js'));
 copyFileSync(path.join(path.dirname(require.resolve('dompurify')), 'purify.min.js'), path.join(vendor, 'purify.js'));
 copyFileSync(path.join(pkgDir('mammoth'), 'mammoth.browser.min.js'), path.join(vendor, 'mammoth.js'));
+// Loaded only when a student downloads the PDF report.
+copyFileSync(path.join(pkgDir('pdfmake'), 'build/pdfmake.min.js'), path.join(vendor, 'pdfmake.js'));
+copyFileSync(path.join(pkgDir('pdfmake'), 'build/vfs_fonts.js'), path.join(vendor, 'pdfmake-fonts.js'));
 console.log('built:', Object.keys(prompts).join(', '), '| kb:', Object.keys(kb).length, 'types,', registry.rules.length, 'rules, register', registry.sources.length, 'sources /', registry.assignments.length, 'assignments OK');

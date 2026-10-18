@@ -1,3 +1,5 @@
+import { loose } from './text.js';
+
 const MAX_PARAGRAPHS = 40;
 const MAX_ITEMS = 3;
 const LONG_PARAGRAPH_WORDS = 200; // a paragraph longer than this is divided so the review can cover the whole piece
@@ -40,16 +42,6 @@ export function splitParagraphs(essay) {
   });
   return { paragraphs: out.slice(0, MAX_PARAGRAPHS), synthetic };
 }
-
-const loose = (s) =>
-  s
-    .toLowerCase()
-    .replace(/[‘’‚′]/g, "'")
-    .replace(/[“”„″]/g, '"')
-    .replace(/[–—−]/g, '-')
-    .replace(/…/g, '...')
-    .replace(/\s+/g, ' ')
-    .trim();
 
 export function inlineMessage({ describe, knowledge = [], paragraphs, synthetic = false, missing = [] }) {
   return [
@@ -103,3 +95,18 @@ export function parseInlineReview(raw, paragraphs) {
 }
 
 export const missingParts = (result) => result.paragraphs.filter((p) => !p.reviewed).map((p) => p.n);
+
+// Sanitizes an in-line review sent back by the browser (for the summary retry). Returns the same shape as a finished review, or null.
+export function sanitizeInline(data) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.paragraphs)) return null;
+  const paragraphs = data.paragraphs.slice(0, MAX_PARAGRAPHS).map((p, i) => ({
+    n: Number.isInteger(p?.n) ? p.n : i + 1,
+    reviewed: p?.reviewed !== false,
+    role: clean(p?.role, 400),
+    flow: clean(p?.flow, 600),
+    issues: list(p?.issues, 500),
+    suggestions: list(p?.suggestions, 600),
+    focus: clean(p?.focus, 600),
+  }));
+  return { status: 'done', arc: clean(data.arc, 1200), paragraphs, synthetic: Boolean(data.synthetic) };
+}

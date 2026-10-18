@@ -2,7 +2,7 @@ import { PROMPTS } from './generated/prompts.js';
 
 // Shown at the top of each tab so students can tell the feedback apart by where it is coming from.
 export const SUMMARY_ANGLE =
-  'A synthesis of all four reviewers. It works only from their reports: it weighs where they agree and differ, resolves conflicts, and sets priorities. It does not review the essay itself.';
+  'A synthesis written last. It reads your essay and context first, then works only from the essay, your context, the four reviewers, and the In-Line Review. It uses nothing from outside those sources. It weighs where the reviewers agree and differ, resolves conflicts, and sets priorities.';
 export const INLINE_ANGLE =
   'A continuity editor. It reads the whole essay as one continuous piece, paragraph by paragraph, and shows how each paragraph carries the thought forward and how to give the reader more context and interest. It does not score the essay or edit line by line.';
 

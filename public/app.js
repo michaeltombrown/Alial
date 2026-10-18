@@ -161,7 +161,17 @@
       out.append(v);
     }
     if (d.paragraphs) out.append(renderInline(d));
-    else if (d.text) out.append(render(d.text));
+    else if (d.text) {
+      out.append(render(d.text));
+      if (d.unverifiedQuotes?.length) {
+        const note = el('div', 'notice warn');
+        note.append(el('strong', '', 'Check these quoted passages. '), document.createTextNode('They could not be matched to your essay, your context, or the reviews, so treat them with caution: '));
+        const ul = el('ul');
+        d.unverifiedQuotes.forEach((q) => ul.append(el('li', '', `\u201c${q}\u201d`)));
+        note.append(ul);
+        out.append(note);
+      }
+    }
     else if (state.active === 'summary' && d.status !== 'failed') {
       // The summary is written last, from all of the analyses. Show what it is waiting on.
       const p = el('p', 'placeholder' + (d.status === 'running' ? ' pending' : ''));
@@ -239,7 +249,7 @@
         state.data.inline = ev.status === 'done' ? { status: 'done', arc: ev.arc, paragraphs: ev.paragraphs, synthetic: ev.synthetic } : { status: 'failed', error: ev.error };
         break;
       case 'summary_start': state.data.summary = { status: 'running' }; break;
-      case 'summary': state.data.summary = { status: 'done', text: ev.text }; break;
+      case 'summary': state.data.summary = { status: 'done', text: ev.text, unverifiedQuotes: ev.unverifiedQuotes || [] }; break;
       case 'summary_error': state.data.summary = { status: 'failed', error: ev.error, retry: true }; break;
       case 'error':
         showError($('run-error'), ev.error);
@@ -319,7 +329,18 @@
     throw new Error('Upload a .docx, .txt, or .rtf file, or paste your essay.');
   }
 
-  // Rewrites only the summary from the analyses already on screen.
+  // The in-line review as the server needs it to rewrite the summary.
+  function inlineForRetry() {
+    const d = state.data.inline;
+    if (!d?.paragraphs) return null;
+    return {
+      arc: d.arc,
+      synthetic: d.synthetic,
+      paragraphs: d.paragraphs.map(({ n, reviewed, role, flow, issues, suggestions, focus }) => ({ n, reviewed, role, flow, issues, suggestions, focus })),
+    };
+  }
+
+  // Rewrites only the summary from the essay, the analyses, and the in-line review already on screen.
   async function retrySummary() {
     const reports = state.tabs
       .filter((t) => !['summary', 'inline'].includes(t.id) && state.data[t.id].text)
@@ -334,7 +355,7 @@
       const res = await fetch('/api/summarize', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...state.facts, reports }),
+        body: JSON.stringify({ ...state.facts, reports, inline: inlineForRetry() }),
         signal: state.controller.signal,
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Something went wrong. Please try again.');
@@ -372,7 +393,7 @@
       wordLimit: limitInput.value,
     };
     state.meta = currentType().label + ($('college').value.trim() ? ` · ${$('college').value.trim()}` : '');
-    state.facts = { type: payload.type, length: payload.length, prompt: payload.prompt, college: payload.college, wordLimit: payload.wordLimit, wordCount: countWords(essay) };
+    state.facts = { type: payload.type, length: payload.length, prompt: payload.prompt, college: payload.college, wordLimit: payload.wordLimit, essay, summaryLength: payload.length };
     state.controller = new AbortController();
     resetReport();
     setMainTab('report');
@@ -431,11 +452,61 @@
     catch { btn.textContent = 'Copy failed'; }
     setTimeout(() => (btn.textContent = 'Copy'), 1500);
   });
-  $('download').addEventListener('click', () => {
-    const url = URL.createObjectURL(new Blob([fullMarkdown()], { type: 'text/markdown' }));
-    const a = Object.assign(document.createElement('a'), { href: url, download: 'alial-report.md' });
-    a.click();
-    URL.revokeObjectURL(url);
+  const loaded = new Set();
+  const loadScript = (src) =>
+    new Promise((resolve, reject) => {
+      if (loaded.has(src)) return resolve();
+      const tag = document.createElement('script');
+      tag.src = src;
+      tag.onload = () => { loaded.add(src); resolve(); };
+      tag.onerror = () => reject(new Error(`Could not load ${src}`));
+      document.head.append(tag);
+    });
+
+  const slug = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+  // The whole report as one PDF: every tab, then the essay and context. The PDF tools load only when needed.
+  $('download').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Preparing PDF…';
+    showError($('run-error'), '');
+    try {
+      await loadScript('/vendor/pdfmake.js');
+      await loadScript('/vendor/pdfmake-fonts.js');
+      await loadScript('/pdf.js');
+      const f = state.facts || {};
+      const type = state.config.types.find((t) => t.id === f.type);
+      const today = new Date();
+      const date = today.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+      await AlialPdf.download({
+        title: `Alial report: ${state.meta}`,
+        subtitle: state.meta,
+        date,
+        filename: `alial-report-${slug(type?.label || 'essay')}-${today.toISOString().slice(0, 10)}.pdf`,
+        sections: state.tabs.filter((t) => tabText(t.id)).map((t) => {
+          const quotes = t.id === 'summary' ? state.data.summary.unverifiedQuotes || [] : [];
+          const note = quotes.length
+            ? `\n\n**Check these quoted passages.** They could not be matched to your essay, your context, or the reviews, so treat them with caution:\n\n${quotes.map((q) => `- \u201c${q}\u201d`).join('\n')}`
+            : '';
+          return { name: t.name, angle: t.angle, markdown: tabText(t.id) + note };
+        }),
+        context: [
+          { label: 'Essay type', value: type?.label || '' },
+          { label: 'Question or context', value: f.prompt?.trim() || 'None supplied' },
+          ...(f.college?.trim() ? [{ label: 'College', value: f.college.trim() }] : []),
+          { label: 'Word count', value: `${countWords(f.essay || '')} (limit ${f.wordLimit || type?.limit || ''})` },
+          { label: 'Summary length', value: f.summaryLength || 'medium' },
+        ],
+        essay: f.essay || '',
+      });
+    } catch (ex) {
+      showError($('run-error'), 'The PDF could not be created. Check your connection and try again.');
+    } finally {
+      btn.textContent = label;
+      btn.disabled = !state.tabs.some((t) => tabText(t.id));
+    }
   });
 
   init().catch(() => showError($('form-error'), 'Could not load Alial. Refresh the page.'));

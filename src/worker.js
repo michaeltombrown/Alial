@@ -5,7 +5,7 @@ import { createCompleter, createMockCompleter, DEFAULT_MODEL } from './model.js'
 import { MAX_CHARS, UserError, parseInput, parseSummaryRequest } from './validate.js';
 
 const MAX_BODY_BYTES = 200_000;
-const MAX_SUMMARY_BODY_BYTES = 400_000;
+const MAX_SUMMARY_BODY_BYTES = 600_000;
 const PING_MS = 10_000;
 
 const json = (body, status = 200, headers = {}) =>
@@ -99,7 +99,7 @@ async function summarize(request, env, ctx) {
   const { response, complete, parsed } = await prepare(request, env, MAX_SUMMARY_BODY_BYTES, parseSummaryRequest);
   if (response) return response;
   return streamRun(request, ctx, async ({ emit, signal }) => {
-    await runSummary({ complete, summarizer: SUMMARIZER, reports: parsed.reports, input: parsed.input, emit, signal });
+    await runSummary({ complete, summarizer: SUMMARIZER, reports: parsed.reports, input: parsed.input, inline: parsed.inline, emit, signal });
     emit({ type: 'done' });
   });
 }
@@ -110,7 +110,7 @@ export default {
     if (pathname === '/api/config') return json(config(env));
     // Lets anyone confirm which version is live (for example after a deploy).
     if (pathname === '/api/health') {
-      return json({ ok: true, app: 'alial', features: ['knowledge-base', 'in-line-review', 'viewpoints', 'engine-summary', 'summary-retry', 'requirement-notes', 'tabbed-layout'] });
+      return json({ ok: true, app: 'alial', features: ['knowledge-base', 'in-line-review', 'viewpoints', 'engine-summary', 'summary-retry', 'requirement-notes', 'tabbed-layout', 'pdf-download', 'sourced-summary'] });
     }
     if (pathname === '/api/analyze' || pathname === '/api/summarize') {
       if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405, { allow: 'POST' });

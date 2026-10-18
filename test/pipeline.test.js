@@ -4,7 +4,8 @@ import { runPipeline, analyzerMessage, summarizerMessage } from '../src/pipeline
 import { ANALYZERS, SUMMARIZER, INLINE_REVIEW, engineSections } from '../src/analyzers.js';
 import { getEssayType, ESSAY_TYPES } from '../src/essayTypes.js';
 import { splitParagraphs, parseInlineReview, inlineMessage } from '../src/inline.js';
-import { runSummary } from '../src/pipeline.js';
+import { runSummary, inlineForSummary } from '../src/pipeline.js';
+import { findUnverifiedQuotes } from '../src/quotes.js';
 import { PROMPTS } from '../src/generated/prompts.js';
 
 const essay = 'word '.repeat(60).trim();
@@ -50,7 +51,8 @@ test('runs four analyses and the in-line review, then the summarizer last', asyn
   assert.strictEqual(reports.length, 4);
   assert.ok(summary.startsWith('out-'));
   reports.forEach((r) => assert.ok(calls.at(-1).user.includes(r.text)));
-  assert.ok(!calls.at(-1).user.includes(essay), 'summarizer never sees the essay');
+  assert.ok(calls.at(-1).user.includes(essay), 'the summarizer reads the essay');
+  assert.ok(calls.at(-1).user.includes('<inline_review>') && calls.at(-1).user.includes('the arc'), 'and the in-line review');
   assert.deepStrictEqual(events.map((e) => e.type).filter((t) => t !== 'analyzer'), ['start', 'inline', 'summary_start', 'summary', 'done']);
   assert.ok(events.some((e) => e.type === 'inline' && e.status === 'done'));
   const start = events[0];
@@ -61,8 +63,8 @@ test('the four analyses and the in-line review never see each other\'s output', 
   const { calls, complete } = fakeModel();
   await runPipeline({ complete, summarizer: { system: 'SUM' }, input: input(), emit: () => {} });
   const firstFive = calls.slice(0, 5);
-  assert.ok(firstFive.every((c) => !c.user.includes('out-')), 'first-pass calls contain no model output');
-  assert.ok(!calls.at(-1).user.includes('"paragraphs"'), 'the in-line review is not an input to the summary');
+  assert.ok(firstFive.every((c) => !c.user.includes('out-') && !c.user.includes('the arc')), 'first-pass calls contain no model output');
+  assert.ok(calls.at(-1).user.includes('the arc'), 'the summary does read the in-line review');
 });
 
 test('continues with remaining reviewers when one fails, and discloses the missing reviewer to the summarizer', async () => {
@@ -97,22 +99,45 @@ test('the student\'s prompt and context reach every reviewer', () => {
   assert.match(msg, /Application prompt and context from the student: Why do you want to attend Brown\?/);
 });
 
-test('summarizer gets the analyses, the length, and submission facts, never the essay', () => {
+test('the summarizer reads the essay and context first, then the analyses and the in-line review, and nothing else', async () => {
+  const { KB } = await import('../src/generated/kb.js');
   const reports = [
     { reviewer: 1, name: 'A', text: 'analysis-a' },
     { reviewer: 2, name: 'B', error: 'e' },
     { reviewer: 3, name: 'C', text: 'analysis-c' },
   ];
-  const facts = { ...input(), prompt: 'Q?', wordCount: 700 };
-  const msg = summarizerMessage(reports, 'short', facts);
+  const facts = { ...input(), type: getEssayType('uc-piq'), prompt: 'Describe your leadership.', wordCount: 400, wordLimit: 350 };
+  const inline = { status: 'done', arc: 'the arc', synthetic: false, paragraphs: [{ n: 1, reviewed: true, role: 'sets up', flow: 'leads on', issues: ['thin'], suggestions: ['add detail'], focus: 'word word' }] };
+  const msg = summarizerMessage(reports, 'short', facts, inline);
+  // order: facts, essay, in-line review, then the four analyses
+  const at = (t) => msg.indexOf(t);
+  assert.ok(at('<submission_facts>') < at('<essay>') && at('<essay>') < at('<inline_review>') && at('<inline_review>') < at('<text>'));
+  assert.ok(msg.includes(essay), 'the essay is included');
+  assert.match(msg, /<submission_facts>[\s\S]*UC Personal Insight Question[\s\S]*400 against[\s\S]*50 over[\s\S]*Describe your leadership\./);
+  assert.match(msg, /College named by the student: Brown/);
   assert.ok(msg.includes('Reviewer 1 (A) analysis:') && msg.includes('analysis-a') && msg.includes('analysis-c'));
   assert.match(msg, /Reviewer 2 \(B\): no report is available/);
   assert.match(msg, /Requested length: Short/);
-  assert.match(msg, /<submission_facts>[\s\S]*Common App Personal Statement[\s\S]*700 against[\s\S]*50 over[\s\S]*Q\?/);
-  assert.ok(!msg.includes(essay));
-  assert.ok(!msg.includes('Brown'), 'college is only passed for the Why This College type');
-  const why = summarizerMessage(reports, 'medium', { ...facts, type: getEssayType('why-college') });
-  assert.ok(why.includes('College named by the student: Brown'));
+  assert.match(msg, /Passage it points to: "word word"/);
+  assert.match(msg, /Issue: thin/);
+  assert.match(msg, /These four sources are the only information you may use/);
+  // nothing from outside the four sources
+  assert.ok(!msg.includes('essay_type_guidance') && !msg.includes('requirement_notes') && !msg.includes(KB['uc-piq'].slice(0, 80)));
+  assert.ok(!/https?:\/\//.test(msg));
+  assert.match(summarizerMessage(reports, 'medium', facts, null), /The In-Line Review is not available/);
+});
+
+test('the summary prompt states the hard sourcing rule and the read-the-essay-first rule', () => {
+  const t = SUMMARIZER.system;
+  assert.match(t, /SOURCES: A HARD RULE/);
+  assert.match(t, /exactly four sources, and from nothing else/);
+  for (const k of ['<essay>', '<submission_facts>', '<text>', '<inline_review>']) assert.ok(t.includes(k), k);
+  assert.match(t, /Not stated in the essay, the context, or the reviews\./);
+  assert.match(t, /copied exactly from the essay and must appear there/);
+  assert.match(t, /READ THE ESSAY FIRST/);
+  assert.match(t, /read the whole essay and the context/);
+  assert.match(t, /Where a claim is not supported by the essay, say so plainly/);
+  assert.doesNotMatch(t, /You do not receive the essay itself/);
 });
 
 test('summary prompt combines the Summary Generator role, the app note, and the Engine synthesis sections', () => {
@@ -210,11 +235,11 @@ test('runSummary alone writes a summary from supplied analyses (the retry path)'
   const { calls, complete } = fakeModel();
   const events = [];
   const reports = ANALYZERS.map((a) => ({ id: a.id, name: a.name, reviewer: a.reviewer, text: `analysis ${a.id}` }));
-  const text = await runSummary({ complete, summarizer: { system: 'SUM' }, reports, input: { ...input(), wordCount: 60 }, emit: (e) => events.push(e) });
+  const text = await runSummary({ complete, summarizer: { system: 'SUM' }, reports, input: { ...input(), wordCount: 60 }, inline: null, emit: (e) => events.push(e) });
   assert.ok(text);
   assert.deepStrictEqual(events.map((e) => e.type), ['summary_start', 'summary']);
   assert.strictEqual(calls.length, 1);
-  assert.ok(calls[0].user.includes('analysis rubric') && !calls[0].user.includes(essay));
+  assert.ok(calls[0].user.includes('analysis rubric') && calls[0].user.includes(essay));
 });
 
 // ---- in-line review
@@ -321,4 +346,26 @@ test('the common app entry does not assert current prompt wording', async () => 
   const { KB } = await import('../src/generated/kb.js');
   assert.match(KB['common-app'], /never assert the text of a current prompt/);
   assert.match(analyzerMessage({ ...input(), wordCount: 60 }), /Do not assert the text of any current prompt/);
+});
+
+test('quoted passages in the summary are checked against the essay and the other sources', async () => {
+  const sources = ['The summer my grandmother taught me to fold dumplings changed how I listen.', 'Reviewer note: the opening is concrete and specific.'];
+  const text = 'It opens with \u201cThe summer my grandmother taught me to fold dumplings changed how I listen\u201d, and the phrase \u201ca line that the model invented without any source at all\u201d. Short quote \u201cchanged how\u201d is ignored. With ellipsis: \u201cthe summer my grandmother taught me ... changed how I listen\u201d.';
+  assert.deepStrictEqual(findUnverifiedQuotes(text, sources), ['a line that the model invented without any source at all']);
+  assert.deepStrictEqual(findUnverifiedQuotes('No quotes here.', sources), []);
+  assert.deepStrictEqual(findUnverifiedQuotes('\u201cTHE SUMMER MY GRANDMOTHER taught me to fold dumplings\u201d', sources), [], 'case and punctuation do not matter');
+
+  const events = [];
+  const complete = async () => 'Strength: \u201cthis passage does not exist anywhere in the essay or reports\u201d.';
+  await runSummary({ complete, summarizer: { system: 'S' }, reports: [{ id: 'rubric', name: 'A', reviewer: 1, text: 'fine' }], input: { ...input(), wordCount: 60 }, inline: null, emit: (e) => events.push(e) });
+  assert.deepStrictEqual(events.find((e) => e.type === 'summary').unverifiedQuotes, ['this passage does not exist anywhere in the essay or reports']);
+});
+
+test('inlineForSummary leaves out paragraph text, flags unreviewed parts, and handles a missing review', () => {
+  assert.match(inlineForSummary(null), /not available/);
+  assert.match(inlineForSummary({ status: 'error' }), /not available/);
+  const text = inlineForSummary({ status: 'done', arc: 'A', synthetic: true, paragraphs: [{ n: 1, reviewed: false }, { n: 2, reviewed: true, role: 'r', flow: 'f', issues: [], suggestions: ['s'], focus: '', text: 'SECRET PARAGRAPH TEXT' }] });
+  assert.match(text, /Section 1: not reviewed/);
+  assert.match(text, /Section 2:\n- Role: r/);
+  assert.ok(!text.includes('SECRET PARAGRAPH TEXT'));
 });
