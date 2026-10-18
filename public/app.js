@@ -79,70 +79,75 @@
   };
   const snippet = (t, max = 300) => (t.length > max ? t.slice(0, max).replace(/\s+\S*$/, '') + '…' : t);
 
-  // Paragraph-by-paragraph review: original words, the issues, and one or more suggestions.
-  function renderInline(paragraphs) {
+  // The in-line review: the essay read as one continuous piece, then each paragraph as part of that thought.
+  function renderInline(d) {
     const frag = document.createDocumentFragment();
-    for (const p of paragraphs) {
+    if (d.arc) {
+      const box = el('div', 'arc');
+      box.append(el('div', 'lbl', 'How the essay reads as one piece'), el('p', '', d.arc));
+      frag.append(box);
+    }
+    const unit = d.synthetic ? 'Section' : 'Paragraph';
+    for (const p of d.paragraphs) {
       const sec = el('section', 'para');
       const head = el('div', 'para-head');
-      head.append(el('span', 'para-n', `Paragraph ${p.n} of ${paragraphs.length}`));
-      if (p.purpose) head.append(el('span', 'para-purpose', p.purpose));
+      head.append(el('span', 'para-n', `${unit} ${p.n} of ${d.paragraphs.length}`));
+      if (p.role) head.append(el('span', 'para-purpose', p.role));
       sec.append(head);
-      if (p.works) {
-        const w = el('p', 'works');
-        w.append(el('strong', '', 'What works: '), document.createTextNode(p.works));
-        sec.append(w);
-      }
-      if (!p.comments.length) sec.append(el('p', 'no-issues', 'No major issues in this paragraph.'));
-      for (const c of p.comments) {
+      if (!p.reviewed) {
+        sec.append(el('p', 'no-issues', 'This part was not reviewed. Run the analysis again to include it.'));
+      } else {
         const box = el('div', 'comment');
-        box.append(el('div', 'lbl', 'Original'), el('blockquote', 'orig', c.quote || snippet(p.text)));
-        if (c.issues.length) {
+        box.append(el('div', 'lbl', 'Original'), el('blockquote', 'orig', p.focus || snippet(p.text)));
+        if (p.flow) box.append(el('div', 'lbl flow', 'How it connects'), el('p', 'flow-text', p.flow));
+        if (p.issues.length) {
           box.append(el('div', 'lbl issues', 'Issues'));
           const ul = el('ul');
-          c.issues.forEach((i) => ul.append(el('li', '', i)));
+          p.issues.forEach((i) => ul.append(el('li', '', i)));
           box.append(ul);
         }
-        if (c.suggestions.length) {
-          box.append(el('div', 'lbl suggest', c.suggestions.length > 1 ? 'Suggestions' : 'Suggestion'));
+        if (p.suggestions.length) {
+          box.append(el('div', 'lbl suggest', p.suggestions.length > 1 ? 'Suggestions' : 'Suggestion'));
           const ul = el('ul');
-          c.suggestions.forEach((i) => ul.append(el('li', '', i)));
+          p.suggestions.forEach((i) => ul.append(el('li', '', i)));
           box.append(ul);
         }
         sec.append(box);
       }
-      if (p.text.length > 300) {
-        const d = el('details', 'full-para');
-        d.append(el('summary', '', 'Show full paragraph'), el('p', '', p.text));
-        sec.append(d);
-      }
+      const dt = el('details', 'full-para');
+      dt.append(el('summary', '', `Show full ${unit.toLowerCase()}`), el('p', '', p.text));
+      sec.append(dt);
       frag.append(sec);
     }
     return frag;
   }
 
-  function inlineToMarkdown(paragraphs) {
-    return paragraphs
-      .map((p) => {
-        const lines = [`## Paragraph ${p.n} of ${paragraphs.length}`];
-        if (p.purpose) lines.push(`Purpose: ${p.purpose}`);
-        if (p.works) lines.push(`What works: ${p.works}`);
-        if (!p.comments.length) lines.push('No major issues in this paragraph.');
-        for (const c of p.comments) {
-          lines.push('**Original**', `> ${c.quote || snippet(p.text)}`);
-          if (c.issues.length) lines.push('**Issues**', ...c.issues.map((i) => `- ${i}`));
-          if (c.suggestions.length) lines.push('**Suggestions**', ...c.suggestions.map((i) => `- ${i}`));
-        }
-        return lines.join('\n\n');
-      })
-      .join('\n\n');
+  function inlineToMarkdown(d) {
+    const unit = d.synthetic ? 'Section' : 'Paragraph';
+    const parts = [];
+    if (d.arc) parts.push(`**How the essay reads as one piece**\n\n${d.arc}`);
+    for (const p of d.paragraphs) {
+      const lines = [`## ${unit} ${p.n} of ${d.paragraphs.length}`];
+      if (p.role) lines.push(`Role: ${p.role}`);
+      if (!p.reviewed) lines.push('This part was not reviewed.');
+      else {
+        lines.push('**Original**', `> ${p.focus || snippet(p.text)}`);
+        if (p.flow) lines.push('**How it connects**', p.flow);
+        if (p.issues.length) lines.push('**Issues**', p.issues.map((i) => `- ${i}`).join('\n'));
+        if (p.suggestions.length) lines.push('**Suggestions**', p.suggestions.map((i) => `- ${i}`).join('\n'));
+      }
+      parts.push(lines.join('\n\n'));
+    }
+    return parts.join('\n\n');
   }
 
   // The text a tab contributes to Copy and Download.
   const tabText = (id) => {
     const d = state.data[id];
-    return d.paragraphs ? inlineToMarkdown(d.paragraphs) : d.text || '';
+    return d.paragraphs ? inlineToMarkdown(d) : d.text || '';
   };
+
+  const statusWord = { done: 'Done', running: 'Working', waiting: 'Waiting', failed: 'Could not finish' };
 
   function drawOutput() {
     const out = $('out');
@@ -155,15 +160,33 @@
       v.append(el('strong', '', 'Viewpoint: '), document.createTextNode(tab.angle));
       out.append(v);
     }
-    if (d.paragraphs) out.append(renderInline(d.paragraphs));
+    if (d.paragraphs) out.append(renderInline(d));
     else if (d.text) out.append(render(d.text));
-    else {
+    else if (state.active === 'summary' && d.status !== 'failed') {
+      // The summary is written last, from all of the analyses. Show what it is waiting on.
+      const p = el('p', 'placeholder' + (d.status === 'running' ? ' pending' : ''));
+      p.textContent = d.status === 'running' ? 'Writing the summary from all four analyses' : 'The summary is written last, once every analysis and the in-line review are finished.';
+      out.append(p);
+      const ul = el('ul', 'waitlist');
+      for (const t of state.tabs.filter((x) => x.id !== 'summary')) {
+        const li = el('li', state.data[t.id].status);
+        li.append(el('span', 'wl-name', t.name), el('span', 'wl-state', statusWord[state.data[t.id].status] || ''));
+        ul.append(li);
+      }
+      out.append(ul);
+    } else {
       const p = el('p', 'placeholder' + (d.status === 'running' ? ' pending' : ''));
       p.textContent =
         d.status === 'failed' ? d.error || 'This analysis could not be completed.'
-        : d.status === 'running' ? (state.active === 'inline' ? 'Reading your essay paragraph by paragraph' : 'Reading your essay')
-        : 'Waiting for the four analyses to finish';
+        : state.active === 'inline' ? 'Reading your essay as one piece, then paragraph by paragraph'
+        : 'Reading your essay';
       out.append(p);
+      if (d.status === 'failed' && d.retry) {
+        const b = el('button', 'ghost retry', 'Retry the summary');
+        b.type = 'button';
+        b.addEventListener('click', retrySummary);
+        out.append(b);
+      }
     }
     $('copy').disabled = !tabText(state.active);
     $('download').disabled = !state.tabs.some((t) => tabText(t.id));
@@ -200,11 +223,15 @@
         state.data[ev.id] = ev.status === 'done' ? { status: 'done', text: ev.text } : { status: 'failed', error: ev.error };
         break;
       case 'inline':
-        state.data.inline = ev.status === 'done' ? { status: 'done', paragraphs: ev.paragraphs } : { status: 'failed', error: ev.error };
+        state.data.inline = ev.status === 'done' ? { status: 'done', arc: ev.arc, paragraphs: ev.paragraphs, synthetic: ev.synthetic } : { status: 'failed', error: ev.error };
         break;
       case 'summary_start': state.data.summary = { status: 'running' }; break;
       case 'summary': state.data.summary = { status: 'done', text: ev.text }; break;
-      case 'error': showError($('run-error'), ev.error); break;
+      case 'summary_error': state.data.summary = { status: 'failed', error: ev.error, retry: true }; break;
+      case 'error':
+        showError($('run-error'), ev.error);
+        if (['waiting', 'running'].includes(state.data.summary?.status)) state.data.summary = { status: 'failed', error: ev.error };
+        break;
       case 'done': setRunning(false); return true;
     }
     drawTabs();
@@ -244,6 +271,37 @@
     throw new Error('Upload a .docx, .txt, or .rtf file, or paste your essay.');
   }
 
+  // Rewrites only the summary from the analyses already on screen.
+  async function retrySummary() {
+    const reports = state.tabs
+      .filter((t) => !['summary', 'inline'].includes(t.id) && state.data[t.id].text)
+      .map((t) => ({ id: t.id, text: state.data[t.id].text }));
+    showError($('run-error'), '');
+    state.data.summary = { status: 'running' };
+    drawTabs();
+    drawOutput();
+    state.controller = new AbortController();
+    setRunning(true);
+    try {
+      const res = await fetch('/api/summarize', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...state.facts, reports }),
+        signal: state.controller.signal,
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Something went wrong. Please try again.');
+      await readStream(res);
+    } catch (ex) {
+      if (ex.name !== 'AbortError') {
+        state.data.summary = { status: 'failed', error: ex.message, retry: true };
+        drawTabs();
+        drawOutput();
+      }
+    } finally {
+      setRunning(false);
+    }
+  }
+
   async function submit(e) {
     e.preventDefault();
     const err = $('form-error');
@@ -266,6 +324,7 @@
       wordLimit: limitInput.value,
     };
     state.meta = currentType().label + ($('college').value.trim() ? ` · ${$('college').value.trim()}` : '');
+    state.facts = { type: payload.type, length: payload.length, prompt: payload.prompt, college: payload.college, wordLimit: payload.wordLimit, wordCount: countWords(essay) };
     state.controller = new AbortController();
     setRunning(true);
     try {

@@ -3,8 +3,8 @@ import assert from 'node:assert';
 import vm from 'node:vm';
 import { readFileSync, readdirSync } from 'node:fs';
 import { PROMPTS } from '../src/generated/prompts.js';
-import { readTextStream, createCompleter } from '../src/model.js';
-import { parseInput, UserError } from '../src/validate.js';
+import { readTextStream, createCompleter, describeFailure } from '../src/model.js';
+import { parseInput, parseSummaryRequest, UserError } from '../src/validate.js';
 import worker from '../src/worker.js';
 import { ESSAY_TYPES } from '../src/essayTypes.js';
 
@@ -61,6 +61,37 @@ test('completer sends the key, model and prompts, and retries on 529', async () 
   assert.strictEqual(seen[1].init.headers['x-api-key'], 'k');
 });
 
+test('completer honors Retry-After, retries mid-stream overloads, and gives up after the allowed retries', async () => {
+  const waits = [];
+  const ok = () => new Response(sse([{ type: 'content_block_delta', delta: { type: 'text_delta', text: 'done' } }]), { status: 200 });
+  let n = 0;
+  const limited = async () => (++n < 3 ? new Response('slow down', { status: 429, headers: { 'retry-after': '7' } }) : ok());
+  const text = await createCompleter({ apiKey: 'k', fetchFn: limited, sleepFn: async (ms) => waits.push(ms) })({ system: 's', user: 'u', retries: 5 });
+  assert.strictEqual(text, 'done');
+  assert.deepStrictEqual(waits, [7000, 7000], 'waits as long as the service asks');
+
+  const overloaded = () => new Response(sse([{ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }]), { status: 200 });
+  let m = 0;
+  const midStream = async () => (++m === 1 ? overloaded() : ok());
+  assert.strictEqual(await createCompleter({ apiKey: 'k', fetchFn: midStream, sleepFn: async () => {} })({ system: 's', user: 'u' }), 'done');
+
+  let k = 0;
+  const always = async () => (k++, new Response('busy', { status: 529 }));
+  await assert.rejects(createCompleter({ apiKey: 'k', fetchFn: always, sleepFn: async () => {} })({ system: 's', user: 'u', retries: 3 }), /529/);
+  assert.strictEqual(k, 4, 'one try plus three retries');
+
+  let bad = 0;
+  await assert.rejects(createCompleter({ apiKey: 'k', fetchFn: async () => (bad++, new Response('no', { status: 400 })), sleepFn: async () => {} })({ system: 's', user: 'u' }), /400/);
+  assert.strictEqual(bad, 1, 'client errors are not retried');
+});
+
+test('failure reasons are friendly and leak nothing', () => {
+  assert.match(describeFailure(new Error('Anthropic API 429: secret detail')), /rate limiting/);
+  assert.match(describeFailure(new Error('Anthropic stream error (overloaded_error): x')), /busy/);
+  assert.strictEqual(describeFailure(new Error('weird')), '');
+  assert.ok(!/secret/.test(describeFailure(new Error('Anthropic API 429: secret detail'))));
+});
+
 test('input validation', () => {
   const ok = parseInput({ type: 'uc-piq', essay, length: 'short', prompt: ' Q ', college: 'X', wordLimit: '300' });
   assert.deepStrictEqual([ok.type.id, ok.length, ok.prompt, ok.wordLimit], ['uc-piq', 'short', 'Q', 300]);
@@ -102,7 +133,8 @@ test('worker: streams the analyses, the in-line review, and the summary as NDJSO
   assert.strictEqual(events.filter((e) => e.type === 'analyzer' && e.status === 'done').length, 4);
   const inline = events.find((e) => e.type === 'inline');
   assert.strictEqual(inline.status, 'done');
-  assert.ok(inline.paragraphs.length >= 1 && inline.paragraphs[0].comments[0].issues.length >= 1);
+  assert.ok(inline.arc && inline.paragraphs.length >= 1 && inline.paragraphs[0].issues.length >= 1 && inline.paragraphs[0].suggestions.length >= 1);
+  assert.ok(events.findIndex((e) => e.type === 'inline') < events.findIndex((e) => e.type === 'summary'), 'in-line review comes before the summary');
   assert.ok(events.find((e) => e.type === 'summary').text.includes('## Summary'));
   assert.strictEqual(events.at(-1).type, 'done');
 });
@@ -191,4 +223,32 @@ test('worker config exposes each type\'s prompt hint', async () => {
   const cfg = await (await worker.fetch(new Request('https://alial.test/api/config'), env(), ctx())).json();
   assert.ok(cfg.types.every((t) => t.promptHint));
   assert.ok(!JSON.stringify(cfg).includes('essay_type_guidance'), 'guidance text is server-side only');
+});
+
+test('summary retry request validation', () => {
+  const ok = parseSummaryRequest({ type: 'uc-piq', length: 'short', wordCount: '300', reports: [{ id: 'rubric', text: 'a' }, { id: 'coach', text: 'b' }] });
+  assert.strictEqual(ok.input.length, 'short');
+  assert.strictEqual(ok.input.wordCount, 300);
+  assert.strictEqual(ok.reports.length, 4);
+  assert.strictEqual(ok.reports.filter((r) => !r.error).length, 2, 'analyses that were not sent are treated as missing reviewers');
+  assert.deepStrictEqual(ok.reports.map((r) => r.reviewer), [1, 2, 3, 4]);
+  for (const bad of [null, { type: 'x', reports: [] }, { type: 'uc-piq', reports: [] }, { type: 'uc-piq', reports: [{ id: 'nope', text: 'a' }] }, { type: 'uc-piq', reports: [{ id: 'rubric', text: 'a' }, { id: 'rubric', text: 'b' }] }, { type: 'uc-piq', reports: [{ id: 'rubric', text: 'x'.repeat(90000) }] }, { type: 'uc-piq', reports: [{ id: 'rubric', text: '  ' }] }]) {
+    assert.throws(() => parseSummaryRequest(bad), UserError);
+  }
+});
+
+test('worker: /api/summarize rewrites only the summary from the analyses it is given', async () => {
+  const c = ctx();
+  const req = new Request('https://alial.test/api/summarize', { method: 'POST', body: JSON.stringify({ type: 'common-app', length: 'short', wordCount: 90, reports: [{ id: 'rubric', text: 'r' }, { id: 'admissions', text: 'a' }] }) });
+  const res = await worker.fetch(req, env(), c);
+  assert.strictEqual(res.status, 200);
+  const events = (await res.text()).trim().split('\n').map((l) => JSON.parse(l));
+  await c.done();
+  assert.deepStrictEqual(events.map((e) => e.type), ['summary_start', 'summary', 'done']);
+  assert.ok(events[1].text.includes('## Summary'));
+  assert.strictEqual((await worker.fetch(new Request('https://alial.test/api/summarize'), env(), ctx())).status, 405);
+  const bad = new Request('https://alial.test/api/summarize', { method: 'POST', body: JSON.stringify({ type: 'common-app', reports: [] }) });
+  assert.strictEqual((await worker.fetch(bad, env(), ctx())).status, 400);
+  const limited = env({ LIMITER: { limit: async () => ({ success: false }) } });
+  assert.strictEqual((await worker.fetch(new Request('https://alial.test/api/summarize', { method: 'POST', body: JSON.stringify({}) }), limited, ctx())).status, 429);
 });

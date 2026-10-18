@@ -3,7 +3,8 @@ import assert from 'node:assert';
 import { runPipeline, analyzerMessage, summarizerMessage } from '../src/pipeline.js';
 import { ANALYZERS, SUMMARIZER, INLINE_REVIEW, engineSections } from '../src/analyzers.js';
 import { getEssayType, ESSAY_TYPES } from '../src/essayTypes.js';
-import { splitParagraphs, parseInlineReview } from '../src/inline.js';
+import { splitParagraphs, parseInlineReview, inlineMessage } from '../src/inline.js';
+import { runSummary } from '../src/pipeline.js';
 import { PROMPTS } from '../src/generated/prompts.js';
 
 const essay = 'word '.repeat(60).trim();
@@ -16,7 +17,7 @@ function fakeModel({ failOn = () => false, inlineJson } = {}) {
   const complete = async (c) => {
     calls.push(c);
     if (failOn(c)) throw new Error('boom');
-    if (c.system === INLINE_REVIEW.system) return inlineJson ?? JSON.stringify({ paragraphs: [{ n: 1, purpose: 'p', works: 'w', comments: [{ quote: 'word word', issues: ['i'], suggestions: ['s'] }] }] });
+    if (c.system === INLINE_REVIEW.system) return inlineJson ?? JSON.stringify({ arc: 'the arc', paragraphs: [{ n: 1, role: 'r', flow: 'f', issues: ['i'], suggestions: ['s'], focus: 'word word' }] });
     return `out-${calls.length}`;
   };
   return { calls, complete };
@@ -50,8 +51,7 @@ test('runs four analyses and the in-line review, then the summarizer last', asyn
   assert.ok(summary.startsWith('out-'));
   reports.forEach((r) => assert.ok(calls.at(-1).user.includes(r.text)));
   assert.ok(!calls.at(-1).user.includes(essay), 'summarizer never sees the essay');
-  assert.deepStrictEqual(events.map((e) => e.type).filter((t) => !['analyzer', 'inline'].includes(t)), ['start', 'summary_start', 'summary', 'done']);
-  assert.strictEqual(events.at(-1).type, 'done', 'done comes after everything, including the in-line review');
+  assert.deepStrictEqual(events.map((e) => e.type).filter((t) => t !== 'analyzer'), ['start', 'inline', 'summary_start', 'summary', 'done']);
   assert.ok(events.some((e) => e.type === 'inline' && e.status === 'done'));
   const start = events[0];
   assert.ok(start.summaryAngle && start.inlineAngle && start.analyzers.every((a) => a.angle && a.reviewer));
@@ -160,43 +160,134 @@ test('every essay type has a prompt hint and a guidance entry', async () => {
   }
 });
 
-// ---- in-line review
-const sample = 'I grew up folding dumplings with my grandmother.\n\nShe never measured anything. I learned to listen instead.\n\nThat is why I want to study linguistics.';
-
-test('splitParagraphs splits on blank lines, falls back to single newlines, and caps the count', () => {
-  assert.strictEqual(splitParagraphs(sample).length, 3);
-  assert.deepStrictEqual(splitParagraphs('one\ntwo\nthree'), ['one', 'two', 'three']);
-  assert.deepStrictEqual(splitParagraphs('  one long block  '), ['one long block']);
-  assert.strictEqual(splitParagraphs(Array.from({ length: 60 }, (_, i) => `p${i}`).join('\n\n')).length, 40);
+test('results appear in order: the four analyses, then the in-line review, then the summary last', async () => {
+  const { complete } = fakeModel();
+  const events = [];
+  await runPipeline({ complete, summarizer: { system: 'SUM' }, input: input(), emit: (e) => events.push(e) });
+  const at = (pred) => events.findIndex(pred);
+  const lastAnalyzer = events.map((e, i) => (e.type === 'analyzer' ? i : -1)).filter((i) => i >= 0).at(-1);
+  assert.ok(at((e) => e.type === 'inline') > lastAnalyzer, 'in-line review is shown after all four analyses');
+  assert.ok(at((e) => e.type === 'summary_start') > at((e) => e.type === 'inline'), 'summary starts after the in-line review');
+  assert.ok(at((e) => e.type === 'summary') > at((e) => e.type === 'summary_start'));
+  assert.strictEqual(events.at(-1).type, 'done');
 });
 
-test('in-line review keeps the original text from the server, drops quotes that are not in the paragraph, and fills gaps', () => {
-  const paras = splitParagraphs(sample);
+test('in-line review waits to be shown even when it finishes first', async () => {
+  const order = [];
+  const { complete } = fakeModel();
+  const slow = async (c) => {
+    if (analyzerSystems.has(c.system)) await new Promise((r) => setTimeout(r, 30));
+    return complete(c);
+  };
+  await runPipeline({ complete: slow, summarizer: { system: 'S' }, input: input(), emit: (e) => order.push(e.type + (e.id ? `:${e.id}` : '')) });
+  assert.ok(order.indexOf('inline') > order.lastIndexOf('analyzer:admissions'));
+});
+
+test('a failed summary does not hang or throw: it reports a reason and the analyses are kept', async () => {
+  const { calls, complete } = fakeModel({ failOn: (c) => c.system === 'SUM' });
+  const events = [];
+  const result = await runPipeline({ complete, summarizer: { system: 'SUM' }, input: input(), emit: (e) => events.push(e) });
+  assert.strictEqual(result.summary, null);
+  assert.strictEqual(result.reports.length, 4);
+  const err = events.find((e) => e.type === 'summary_error');
+  assert.ok(err && /summary could not be written/i.test(err.error));
+  assert.ok(!JSON.stringify(events).includes('boom'));
+  assert.strictEqual(events.at(-1).type, 'done');
+  assert.strictEqual(calls.at(-1).retries, 5, 'the summary is retried patiently');
+});
+
+test('a rate-limited summary gives a friendly reason', async () => {
+  const complete = async (c) => {
+    if (c.system === 'SUM') throw new Error('Anthropic API 429: rate_limit_error');
+    return c.system === INLINE_REVIEW.system ? '{"arc":"a","paragraphs":[]}' : 'ok';
+  };
+  const events = [];
+  await runPipeline({ complete, summarizer: { system: 'SUM' }, input: input(), emit: (e) => events.push(e) });
+  assert.match(events.find((e) => e.type === 'summary_error').error, /rate limiting/);
+});
+
+test('runSummary alone writes a summary from supplied analyses (the retry path)', async () => {
+  const { calls, complete } = fakeModel();
+  const events = [];
+  const reports = ANALYZERS.map((a) => ({ id: a.id, name: a.name, reviewer: a.reviewer, text: `analysis ${a.id}` }));
+  const text = await runSummary({ complete, summarizer: { system: 'SUM' }, reports, input: { ...input(), wordCount: 60 }, emit: (e) => events.push(e) });
+  assert.ok(text);
+  assert.deepStrictEqual(events.map((e) => e.type), ['summary_start', 'summary']);
+  assert.strictEqual(calls.length, 1);
+  assert.ok(calls[0].user.includes('analysis rubric') && !calls[0].user.includes(essay));
+});
+
+// ---- in-line review
+const sample = 'I grew up folding dumplings with my grandmother.\n\nShe never measured anything. I learned to listen instead.\n\nThat is why I want to study linguistics.';
+const longSentence = 'The summer my grandmother taught me to fold dumplings changed how I listen to the people around me. ';
+
+test('splitParagraphs splits on blank lines, falls back to single newlines, and caps the count', () => {
+  assert.strictEqual(splitParagraphs(sample).paragraphs.length, 3);
+  assert.strictEqual(splitParagraphs(sample).synthetic, false);
+  assert.deepStrictEqual(splitParagraphs('one\ntwo\nthree').paragraphs, ['one', 'two', 'three']);
+  assert.deepStrictEqual(splitParagraphs('  one short block  ').paragraphs, ['one short block']);
+  assert.strictEqual(splitParagraphs(Array.from({ length: 60 }, (_, i) => `p${i}`).join('\n\n')).paragraphs.length, 40);
+});
+
+test('a single long block is divided into sections so the review covers the whole essay', () => {
+  const block = longSentence.repeat(30).trim(); // one paragraph, about 500 words
+  const { paragraphs, synthetic } = splitParagraphs(block);
+  assert.ok(synthetic);
+  assert.ok(paragraphs.length >= 4 && paragraphs.length <= 6, `sections: ${paragraphs.length}`);
+  assert.strictEqual(paragraphs.join(' ').replace(/\s+/g, ' '), block.replace(/\s+/g, ' '), 'sections add back up to the original text');
+  assert.ok(paragraphs.every((p) => p.split(/\s+/).length >= 30), 'no tiny sections');
+  const msg = inlineMessage({ describe: 'd', paragraphs, synthetic });
+  assert.match(msg, /divided into consecutive sections/);
+  assert.ok(msg.includes(`[P${paragraphs.length}]`));
+});
+
+test('in-line review parsing: keeps original text, verifies the focus quote, and marks skipped parts as not reviewed', () => {
+  const paras = splitParagraphs(sample).paragraphs;
   const raw = '```json\n' + JSON.stringify({
+    arc: 'A grandmother scene becomes a reason to study language.',
     paragraphs: [
-      { n: 1, purpose: 'Opens with a scene', works: 'Concrete', comments: [{ quote: 'folding dumplings with my grandmother', issues: ['Stays at surface level'], suggestions: ['Add one detail of the kitchen', 'Ask what you noticed'] }] },
-      { n: 2, comments: [{ quote: 'this quote was invented by the model', issues: ['Vague'], suggestions: ['Name a moment'] }, { quote: 'x', issues: [], suggestions: [] }] },
+      { n: 1, role: 'Opens with a scene', flow: 'Sets up the next paragraph', issues: ['Stays at surface level'], suggestions: ['Add one detail of the kitchen', 'Ask what you noticed'], focus: 'folding dumplings with my grandmother' },
+      { n: 2, role: 'Turns the scene into an idea', issues: ['Vague'], suggestions: ['Name a moment'], focus: 'a quote the model invented' },
     ],
   }) + '\n```';
   const out = parseInlineReview(raw, paras);
-  assert.strictEqual(out.length, 3);
-  assert.deepStrictEqual(out.map((p) => p.text), paras);
-  assert.strictEqual(out[0].comments[0].quote, 'folding dumplings with my grandmother');
-  assert.strictEqual(out[0].comments[0].suggestions.length, 2);
-  assert.strictEqual(out[1].comments.length, 1, 'comments with no issues or suggestions are dropped');
-  assert.strictEqual(out[1].comments[0].quote, '', 'an unverifiable quote is never shown as original text');
-  assert.deepStrictEqual(out[2].comments, [], 'a paragraph the model skipped still appears');
-  // curly quotes and spacing differences still match
-  const curly = parseInlineReview(JSON.stringify({ paragraphs: [{ n: 1, comments: [{ quote: 'It’s   fine', issues: ['i'], suggestions: ['s'] }] }] }), ["it's fine and plain"]);
-  assert.strictEqual(curly[0].comments[0].quote, 'It’s   fine');
+  assert.strictEqual(out.arc, 'A grandmother scene becomes a reason to study language.');
+  assert.deepStrictEqual(out.paragraphs.map((p) => p.text), paras);
+  assert.strictEqual(out.paragraphs[0].focus, 'folding dumplings with my grandmother');
+  assert.strictEqual(out.paragraphs[0].suggestions.length, 2);
+  assert.strictEqual(out.paragraphs[1].focus, '', 'an unverifiable quote is never shown as original text');
+  assert.strictEqual(out.paragraphs[2].reviewed, false, 'a skipped part is flagged, not shown as having no issues');
+  assert.strictEqual(parseInlineReview(JSON.stringify({ paragraphs: [{ n: 1, focus: 'It\u2019s   fine', issues: [], suggestions: ['s'] }] }), ["it's fine and plain"]).paragraphs[0].focus, 'It\u2019s   fine');
   assert.throws(() => parseInlineReview('no json here', paras), /not valid JSON/);
   assert.throws(() => parseInlineReview('{"x":1}', paras), /no paragraphs/);
 });
 
-test('in-line review prompt forbids rewriting and invented details', () => {
-  assert.match(INLINE_REVIEW.system, /Never write a replacement paragraph/);
-  assert.match(INLINE_REVIEW.system, /Never invent events, dialogue, emotions/);
-  assert.match(INLINE_REVIEW.system, /exact, contiguous sentence or phrase/);
+test('when the model skips part of the essay, the pipeline asks once more and uses the more complete answer', async () => {
+  const essay3 = sample;
+  let inlineCalls = 0;
+  const full = (n) => ({ n, role: 'r', flow: 'f', issues: ['i'], suggestions: ['s'], focus: '' });
+  const users = [];
+  const complete = async (c) => {
+    if (c.system !== INLINE_REVIEW.system) return 'ok';
+    users.push(c.user);
+    return JSON.stringify({ arc: 'a', paragraphs: ++inlineCalls === 1 ? [full(1)] : [full(1), full(2), full(3)] });
+  };
+  const events = [];
+  await runPipeline({ complete, summarizer: { system: 'S' }, input: { ...input(), essay: essay3 + ' ' + 'filler '.repeat(20) }, emit: (e) => events.push(e) });
+  const inline = events.find((e) => e.type === 'inline');
+  assert.strictEqual(inlineCalls, 2);
+  assert.match(users[1], /left out part 2, 3/);
+  assert.ok(inline.paragraphs.every((p) => p.reviewed));
+});
+
+test('in-line review prompt reads the essay as one piece, stays at paragraph level, and forbids rewriting and invented details', () => {
+  const t = INLINE_REVIEW.system;
+  assert.match(t, /one continuous piece/);
+  assert.match(t, /Do not comment sentence by sentence/);
+  assert.match(t, /Do not skip any part, and do not stop early/);
+  assert.match(t, /Never write a replacement paragraph/);
+  assert.match(t, /Never invent events, dialogue, emotions/);
+  assert.match(t, /copied character for character/);
 });
 
 test('summarizer is the Summary Generator prompt', () => assert.match(SUMMARIZER.system, /Summary Generator/));

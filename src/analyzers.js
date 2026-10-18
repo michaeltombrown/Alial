@@ -4,7 +4,7 @@ import { PROMPTS } from './generated/prompts.js';
 export const SUMMARY_ANGLE =
   'A synthesis of all four reviewers. It works only from their reports: it weighs where they agree and differ, resolves conflicts, and sets priorities. It does not review the essay itself.';
 export const INLINE_ANGLE =
-  'A line-level editor. It reads each paragraph in order and points to specific passages, what is holding them back, and ways to improve them. It does not score the essay.';
+  'A continuity editor. It reads the whole essay as one continuous piece, paragraph by paragraph, and shows how each paragraph carries the thought forward and how to give the reader more context and interest. It does not score the essay or edit line by line.';
 
 // The four independent essay analysis prompts, in the order the Intelligence Engine numbers its reviewers.
 // Each runs against every essay.

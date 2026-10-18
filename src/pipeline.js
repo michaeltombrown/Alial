@@ -1,7 +1,8 @@
 import { ANALYZERS, INLINE_REVIEW, SUMMARY_ANGLE, INLINE_ANGLE } from './analyzers.js';
 import { countWords } from './text.js';
 import { KB, RULES } from './generated/kb.js';
-import { splitParagraphs, inlineMessage, parseInlineReview } from './inline.js';
+import { splitParagraphs, inlineMessage, parseInlineReview, missingParts } from './inline.js';
+import { describeFailure } from './model.js';
 
 const NO_PROMPT = 'Not supplied. Proceed with reasonable assumptions and state them.';
 
@@ -95,12 +96,62 @@ export function summarizerMessage(reports, length = 'medium', input) {
   ].join('\n');
 }
 
+const withReason = (base, err) => {
+  const reason = describeFailure(err);
+  return reason ? `${base} ${reason}` : base;
+};
+
+// Reads the whole essay as one piece and returns the in-line review (or an error result). Never emits.
+async function runInline({ complete, inline, input, paragraphs, synthetic, signal }) {
+  const describe = describeContext(input);
+  const knowledge = knowledgeLines(input.type.id);
+  const ask = (missing = []) =>
+    complete({ system: inline.system, user: inlineMessage({ describe, knowledge, paragraphs, synthetic, missing }), signal });
+  try {
+    let result = parseInlineReview(await ask(), paragraphs);
+    const missing = missingParts(result);
+    if (missing.length) {
+      // The model skipped part of the essay: ask once more for the complete review.
+      try {
+        const retry = parseInlineReview(await ask(missing), paragraphs);
+        if (missingParts(retry).length < missing.length) result = retry;
+      } catch (err) {
+        if (signal?.aborted) throw err;
+      }
+    }
+    return { status: 'done', arc: result.arc, paragraphs: result.paragraphs, synthetic };
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    console.error('[alial] in-line review failed:', err.message);
+    return { status: 'error', error: withReason('The in-line review could not be completed.', err) };
+  }
+}
+
 /**
- * Runs the four analyses and the in-line review in parallel, then the summarizer over the four analyses.
+ * Writes the summary from the four analyses. Emits summary_start, then summary or summary_error. Never throws except on abort.
+ * Rate limits and overloads are retried patiently because this is the largest request of the run.
+ */
+export async function runSummary({ complete, summarizer, reports, input, emit = () => {}, signal }) {
+  emit({ type: 'summary_start', reviewersUsed: reports.filter((r) => !r.error).length });
+  try {
+    const text = await complete({ system: summarizer.system, user: summarizerMessage(reports, input.length, input), signal, retries: 5 });
+    emit({ type: 'summary', text });
+    return text;
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    console.error('[alial] summary failed:', err.message);
+    emit({ type: 'summary_error', error: withReason('The summary could not be written.', err) });
+    return null;
+  }
+}
+
+/**
+ * Runs the four analyses and the in-line review in parallel. Results are shown in this order: the four analyses as they
+ * finish, then the in-line review, then the summary, which waits for everything and is written from the four analyses only.
  * `emit` receives progress events so a UI can stream them.
  */
 export async function runPipeline({ complete, summarizer, input, emit = () => {}, signal, inline = INLINE_REVIEW }) {
-  const paragraphs = splitParagraphs(input.essay);
+  const { paragraphs, synthetic } = splitParagraphs(input.essay);
   input = { ...input, wordCount: countWords(input.essay) };
   emit({
     type: 'start',
@@ -109,22 +160,8 @@ export async function runPipeline({ complete, summarizer, input, emit = () => {}
     inlineAngle: INLINE_ANGLE,
   });
 
-  // The in-line review is independent of the four analyses and of the summary.
-  const inlinePromise = (async () => {
-    try {
-      const raw = await complete({
-        system: inline.system,
-        user: inlineMessage({ describe: describeContext(input), knowledge: knowledgeLines(input.type.id), paragraphs }),
-        signal,
-      });
-      emit({ type: 'inline', status: 'done', paragraphs: parseInlineReview(raw, paragraphs) });
-    } catch (err) {
-      if (signal?.aborted) throw err;
-      console.error('[alial] in-line review failed:', err.message);
-      emit({ type: 'inline', status: 'error', error: 'The in-line review could not be completed.' });
-    }
-  })();
-
+  // Independent of the four analyses and of the summary. It starts now but is shown after the analyses.
+  const inlinePromise = runInline({ complete, inline, input, paragraphs, synthetic, signal });
   inlinePromise.catch(() => {}); // handled again where it is awaited below
 
   const user = analyzerMessage(input);
@@ -137,22 +174,18 @@ export async function runPipeline({ complete, summarizer, input, emit = () => {}
       } catch (err) {
         if (signal?.aborted) throw err;
         console.error(`[alial] analyzer ${id} failed:`, err.message);
-        emit({ type: 'analyzer', id, status: 'error', error: 'This reviewer could not complete its analysis.' });
+        emit({ type: 'analyzer', id, status: 'error', error: withReason('This reviewer could not complete its analysis.', err) });
         return { id, name, reviewer, error: err.message };
       }
     }),
   );
 
-  const ok = reports.filter((r) => !r.error);
-  if (ok.length === 0) {
-    await inlinePromise;
-    throw new Error('All reviewers failed. Please try again.');
-  }
+  emit({ type: 'inline', ...(await inlinePromise) });
 
-  emit({ type: 'summary_start', reviewersUsed: ok.length });
-  const summary = await complete({ system: summarizer.system, user: summarizerMessage(reports, input.length, input), signal });
-  emit({ type: 'summary', text: summary });
-  await inlinePromise;
+  const ok = reports.filter((r) => !r.error);
+  if (ok.length === 0) throw new Error('All reviewers failed. Please try again.');
+
+  const summary = await runSummary({ complete, summarizer, reports, input, emit, signal });
   emit({ type: 'done' });
   return { reports, summary };
 }

@@ -2,6 +2,8 @@ const API_URL = 'https://api.anthropic.com/v1/messages';
 export const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const DEFAULT_MAX_TOKENS = 12000;
 const RETRYABLE = new Set([429, 500, 502, 503, 529]);
+const RETRYABLE_STREAM_ERRORS = new Set(['overloaded_error', 'rate_limit_error', 'api_error']);
+const MAX_WAIT_MS = 30000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Reads an Anthropic Messages SSE stream and returns the concatenated text.
@@ -18,7 +20,11 @@ export async function readTextStream(body) {
       const data = JSON.parse(line.slice(5).trim());
       if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta') text += data.delta.text;
       else if (data.type === 'message_delta' && data.delta?.stop_reason) stopReason = data.delta.stop_reason;
-      else if (data.type === 'error') throw new Error(data.error?.message || 'Anthropic stream error');
+      else if (data.type === 'error') {
+        const err = new Error(`Anthropic stream error (${data.error?.type}): ${data.error?.message || 'unknown'}`);
+        err.retryable = RETRYABLE_STREAM_ERRORS.has(data.error?.type);
+        throw err;
+      }
     }
   };
 
@@ -37,29 +43,44 @@ export async function readTextStream(body) {
   return text;
 }
 
-// Returns async ({ system, user, signal }) => string
-export function createCompleter({ apiKey, model = DEFAULT_MODEL, maxTokens = DEFAULT_MAX_TOKENS, fetchFn = fetch }) {
-  return async ({ system, user, signal }) => {
+// Turns an internal error into a short reason that is safe to show a student.
+export function describeFailure(err) {
+  const m = String(err?.message || err);
+  if (/\b429\b|rate.?limit/i.test(m)) return 'The model service is rate limiting requests right now.';
+  if (/\b529\b|overloaded|\b50[023]\b/i.test(m)) return 'The model service is busy right now.';
+  return '';
+}
+
+// Returns async ({ system, user, signal, retries = 2 }) => string.
+// Retries rate limits and overloads, honoring Retry-After (capped), including overloads that arrive mid-stream.
+export function createCompleter({ apiKey, model = DEFAULT_MODEL, maxTokens = DEFAULT_MAX_TOKENS, fetchFn = fetch, sleepFn = sleep }) {
+  return async ({ system, user, signal, retries = 2 }) => {
     for (let attempt = 0; ; attempt++) {
-      const res = await fetchFn(API_URL, {
-        method: 'POST',
-        signal,
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model, max_tokens: maxTokens, stream: true, system, messages: [{ role: 'user', content: user }] }),
-      });
-      if (res.ok) return readTextStream(res.body);
-      const detail = (await res.text()).slice(0, 300);
-      if (RETRYABLE.has(res.status) && attempt < 2) {
-        await sleep(1000 * 2 ** attempt);
-        continue;
+      let retryAfter = 0;
+      try {
+        const res = await fetchFn(API_URL, {
+          method: 'POST',
+          signal,
+          headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+          body: JSON.stringify({ model, max_tokens: maxTokens, stream: true, system, messages: [{ role: 'user', content: user }] }),
+        });
+        if (res.ok) return await readTextStream(res.body);
+        const detail = (await res.text()).slice(0, 300);
+        const err = new Error(`Anthropic API ${res.status}: ${detail}`);
+        err.retryable = RETRYABLE.has(res.status);
+        retryAfter = Number(res.headers.get('retry-after')) || 0;
+        throw err;
+      } catch (err) {
+        if (signal?.aborted || !err.retryable || attempt >= retries) throw err;
+        await sleepFn(Math.min(MAX_WAIT_MS, retryAfter ? retryAfter * 1000 : 1000 * 2 ** attempt));
       }
-      throw new Error(`Anthropic API ${res.status}: ${detail}`);
     }
   };
 }
 
 // Offline stand-in used when ALIAL_MOCK=1 so the app can be exercised without an API key.
-export function createMockCompleter() {
+let mockSummaryFailed = false; // test switch state, shared across requests in one isolate
+export function createMockCompleter({ failSummaryOnce = false } = {}) {
   return async ({ system, user, signal }) => {
     await new Promise((resolve, reject) => {
       const t = setTimeout(resolve, 800 + Math.random() * 2200);
@@ -71,15 +92,22 @@ export function createMockCompleter() {
     if (system.startsWith("You are Alial's In-Line Review editor")) {
       const paras = [...user.matchAll(/^\[P(\d+)\]\n(.+)$/gm)];
       return JSON.stringify({
+        arc: 'Mock: the essay opens with a scene, builds toward a realization, and closes on a goal. The main opportunity is to give the reader more context early.',
         paragraphs: paras.map((m) => ({
           n: Number(m[1]),
-          purpose: 'Mock: sets up the idea.',
-          works: 'Mock: a clear, personal opening.',
-          comments: [{ quote: m[2].split(/\s+/).slice(0, 8).join(' '), issues: ['Mock issue: the claim is stated without a concrete example.'], suggestions: ['Add one specific moment that shows it.', 'Ask yourself what you noticed in that moment.'] }],
+          role: 'Mock: carries the thought forward.',
+          flow: 'Mock: connects to the previous paragraph through the grandmother and sets up the next.',
+          issues: ['Mock issue: the reader is not told why this moment matters yet.'],
+          suggestions: ['Add one sentence of context that shows what is at stake.', 'Ask yourself what you noticed here that the reader cannot see.'],
+          focus: m[2].split(/\s+/).slice(0, 8).join(' '),
         })),
       });
     }
     if (user.startsWith('Requested length:')) {
+      if (failSummaryOnce && !mockSummaryFailed) {
+        mockSummaryFailed = true;
+        throw new Error('Anthropic API 429: mock rate limit');
+      }
       return [
         '## Summary',
         'This is **mock output** for testing Alial without an API key.',

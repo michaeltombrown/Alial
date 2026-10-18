@@ -1,10 +1,11 @@
 import { ESSAY_TYPES } from './essayTypes.js';
-import { runPipeline, SUMMARY_LENGTHS } from './pipeline.js';
+import { runPipeline, runSummary, SUMMARY_LENGTHS } from './pipeline.js';
 import { SUMMARIZER } from './analyzers.js';
 import { createCompleter, createMockCompleter, DEFAULT_MODEL } from './model.js';
-import { MAX_CHARS, UserError, parseInput } from './validate.js';
+import { MAX_CHARS, UserError, parseInput, parseSummaryRequest } from './validate.js';
 
 const MAX_BODY_BYTES = 200_000;
+const MAX_SUMMARY_BODY_BYTES = 400_000;
 const PING_MS = 10_000;
 
 const json = (body, status = 200, headers = {}) =>
@@ -22,38 +23,42 @@ function config(env) {
   };
 }
 
-async function analyze(request, env, ctx) {
+// Shared checks for the two POST endpoints. Returns { response } to stop, or { complete, body }.
+async function prepare(request, env, maxBytes, parse) {
   if (env.LIMITER) {
     const key = request.headers.get('cf-connecting-ip') || 'unknown';
     const { success } = await env.LIMITER.limit({ key });
-    if (!success) return json({ error: 'Too many requests. Please wait a minute and try again.' }, 429, { 'retry-after': '60' });
+    if (!success) return { response: json({ error: 'Too many requests. Please wait a minute and try again.' }, 429, { 'retry-after': '60' }) };
   }
 
-  let input;
+  let parsed;
   try {
-    if (Number(request.headers.get('content-length')) > MAX_BODY_BYTES) throw new UserError('That request is too large.', 413);
+    if (Number(request.headers.get('content-length')) > maxBytes) throw new UserError('That request is too large.', 413);
     let body;
     try {
       body = await request.json();
     } catch {
-      throw new UserError('Send the essay as JSON.');
+      throw new UserError('Send the request as JSON.');
     }
-    input = parseInput(body);
+    parsed = parse(body);
   } catch (err) {
-    if (err instanceof UserError) return json({ error: err.message }, err.status);
+    if (err instanceof UserError) return { response: json({ error: err.message }, err.status) };
     throw err;
   }
 
   const mock = env.ALIAL_MOCK === '1';
   if (!mock && !env.ANTHROPIC_API_KEY) {
     console.error('[alial] ANTHROPIC_API_KEY is not set');
-    return json({ error: 'Alial is not fully set up yet. Please try again later.' }, 503);
+    return { response: json({ error: 'Alial is not fully set up yet. Please try again later.' }, 503) };
   }
   const complete = mock
-    ? createMockCompleter()
+    ? createMockCompleter({ failSummaryOnce: env.ALIAL_MOCK_FAIL_SUMMARY_ONCE === '1' })
     : createCompleter({ apiKey: env.ANTHROPIC_API_KEY, model: env.ALIAL_MODEL || DEFAULT_MODEL });
+  return { complete, parsed };
+}
 
-  // Stream newline-delimited JSON so the UI can show each analysis as it finishes.
+// Streams newline-delimited JSON events while `run` works, with a keepalive so long runs are not cut off.
+function streamRun(request, ctx, run) {
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
@@ -67,10 +72,10 @@ async function analyze(request, env, ctx) {
   ctx.waitUntil(
     (async () => {
       try {
-        await runPipeline({ complete, summarizer: SUMMARIZER, input, emit, signal: controller.signal });
+        await run({ emit, signal: controller.signal });
       } catch (err) {
         if (!controller.signal.aborted) {
-          console.error('[alial] pipeline failed:', err.message);
+          console.error('[alial] run failed:', err.message);
           emit({ type: 'error', error: 'Something went wrong while analyzing your essay. Please try again.' });
         }
       } finally {
@@ -83,15 +88,33 @@ async function analyze(request, env, ctx) {
   return new Response(readable, { headers: { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store' } });
 }
 
+async function analyze(request, env, ctx) {
+  const { response, complete, parsed } = await prepare(request, env, MAX_BODY_BYTES, parseInput);
+  if (response) return response;
+  return streamRun(request, ctx, ({ emit, signal }) => runPipeline({ complete, summarizer: SUMMARIZER, input: parsed, emit, signal }));
+}
+
+// Rewrites only the summary from analyses the student already has, so a summary failure never forces a full rerun.
+async function summarize(request, env, ctx) {
+  const { response, complete, parsed } = await prepare(request, env, MAX_SUMMARY_BODY_BYTES, parseSummaryRequest);
+  if (response) return response;
+  return streamRun(request, ctx, async ({ emit, signal }) => {
+    await runSummary({ complete, summarizer: SUMMARIZER, reports: parsed.reports, input: parsed.input, emit, signal });
+    emit({ type: 'done' });
+  });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
     if (pathname === '/api/config') return json(config(env));
     // Lets anyone confirm which version is live (for example after a deploy).
-    if (pathname === '/api/health') return json({ ok: true, app: 'alial', features: ['knowledge-base', 'in-line-review', 'viewpoints', 'engine-summary'] });
-    if (pathname === '/api/analyze') {
+    if (pathname === '/api/health') {
+      return json({ ok: true, app: 'alial', features: ['knowledge-base', 'in-line-review', 'viewpoints', 'engine-summary', 'summary-retry', 'requirement-notes'] });
+    }
+    if (pathname === '/api/analyze' || pathname === '/api/summarize') {
       if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405, { allow: 'POST' });
-      return analyze(request, env, ctx);
+      return pathname === '/api/analyze' ? analyze(request, env, ctx) : summarize(request, env, ctx);
     }
     return env.ASSETS.fetch(request);
   },
