@@ -114,3 +114,25 @@ test('browser rtf reader skips tables and keeps paragraphs and unicode', () => {
   const rtf = "{\\rtf1\\ansi{\\fonttbl\\f0 Times;}{\\colortbl;\\red0;}\\f0 Hello \\u8212? world\\par It\\'92s me\\\nNext}";
   assert.strictEqual(sandbox.window.rtfToText(rtf).replace(/\n+/g, '|'), 'Hello — world|It’s me|Next');
 });
+
+test('generated knowledge base matches kb/*.md and the source register matches kb/sources.csv', async () => {
+  const { KB, KB_SOURCES } = await import('../src/generated/kb.js');
+  for (const t of ESSAY_TYPES) {
+    assert.strictEqual(KB[t.id], readFileSync(new URL(`../kb/${t.id}.md`, import.meta.url), 'utf8').trim(), t.id);
+  }
+  const all = Object.values(KB_SOURCES).flat();
+  assert.strictEqual(all.length, 74);
+  assert.deepStrictEqual(Object.fromEntries(Object.entries(KB_SOURCES).map(([k, v]) => [k, v.length])), {
+    'common-app': 7, coalition: 7, 'uc-piq': 9, 'why-college': 9, community: 7, activity: 7, 'short-answer': 8, scholarship: 7, transfer: 6, other: 7,
+  });
+  assert.ok(all.every((s) => s.url.startsWith('https://') && s.title && s.score >= 1));
+  // The audit marks nothing approved for production; the register must not claim otherwise.
+  assert.ok(all.every((s) => s.approvedForProduction === false && s.threePassReviewed === false));
+  assert.strictEqual(all.filter((s) => s.pageChecked).length, 7);
+});
+
+test('worker config exposes each type\'s prompt hint', async () => {
+  const cfg = await (await worker.fetch(new Request('https://alial.test/api/config'), env(), ctx())).json();
+  assert.ok(cfg.types.every((t) => t.promptHint));
+  assert.ok(!JSON.stringify(cfg).includes('essay_type_guidance'), 'guidance text is server-side only');
+});

@@ -18,7 +18,7 @@ function config(env) {
     mock: env.ALIAL_MOCK === '1',
     maxChars: MAX_CHARS,
     lengths: Object.keys(SUMMARY_LENGTHS),
-    types: ESSAY_TYPES.map(({ id, label, limit, hint }) => ({ id, label, limit, hint })),
+    types: ESSAY_TYPES.map(({ id, label, limit, hint, promptHint }) => ({ id, label, limit, hint, promptHint })),
   };
 }
 

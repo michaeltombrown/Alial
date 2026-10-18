@@ -1,5 +1,6 @@
 import { ANALYZERS } from './analyzers.js';
 import { countWords } from './text.js';
+import { KB } from './generated/kb.js';
 
 function describeContext({ type, prompt, college, wordLimit, wordCount }) {
   const lines = [
@@ -13,9 +14,20 @@ function describeContext({ type, prompt, college, wordLimit, wordCount }) {
 }
 
 export function analyzerMessage(input) {
+  const guidance = KB[input.type.id];
   return [
     'A student has submitted the essay below. Evaluate it now, following your instructions in full. Do not ask for more information first.',
     '',
+    ...(guidance
+      ? [
+          'Reference guidance for this essay type is in <essay_type_guidance>. Use it to calibrate how you apply your instructions to this kind of essay and to tailor your suggestions. It supplements your instructions and never overrides them. It is editorial guidance, not official fact: do not quote it, cite it, or mention it, and tell the student to verify school-specific details and deadlines on the official sites.',
+          '',
+          '<essay_type_guidance>',
+          guidance,
+          '</essay_type_guidance>',
+          '',
+        ]
+      : []),
     '<context>',
     describeContext(input),
     '</context>',

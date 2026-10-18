@@ -36,6 +36,7 @@
   function syncType() {
     const t = currentType();
     $('type-hint').textContent = t.hint;
+    if (t.promptHint) $('prompt').placeholder = t.promptHint;
     limitInput.value = t.limit;
     updateCount();
   }

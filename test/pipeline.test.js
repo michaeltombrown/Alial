@@ -75,3 +75,29 @@ test('summarizer receives only the analyses and the length choice, never the ess
 });
 
 test('summarizer is the Summary Generator prompt', () => assert.match(SUMMARIZER.system, /Summary Generator/));
+
+test('each analysis gets only the chosen essay type\'s guidance, the summarizer gets none', async () => {
+  const { KB } = await import('../src/generated/kb.js');
+  const uc = { ...input(), type: getEssayType('uc-piq') };
+  const msg = analyzerMessage({ ...uc, wordCount: 60 });
+  assert.ok(msg.includes('<essay_type_guidance>') && msg.includes(KB['uc-piq']));
+  assert.ok(!msg.includes(KB['common-app']) && !msg.includes(KB['why-college']));
+  assert.match(msg, /do not quote it, cite it, or mention it/);
+
+  const calls = [];
+  await runPipeline({ complete: async (c) => (calls.push(c), 'x'), summarizer: { system: 'S' }, input: uc, emit: () => {} });
+  assert.ok(calls.slice(0, 4).every((c) => c.user.includes(KB['uc-piq'])));
+  assert.ok(!calls[4].user.includes('essay_type_guidance') && !calls[4].user.includes(KB['uc-piq']));
+});
+
+test('every essay type has a prompt hint and a guidance entry', async () => {
+  const { KB } = await import('../src/generated/kb.js');
+  for (const t of ESSAY_TYPES) {
+    assert.ok(t.promptHint && t.promptHint.length > 20, `${t.id} promptHint`);
+    assert.ok(KB[t.id] && KB[t.id].length > 1200 && KB[t.id].length < 4000, `${t.id} guidance size ${KB[t.id]?.length}`);
+    for (const h of ['## The essay', '## What strong', '## Common weaknesses', '## How to calibrate', '## Suggestions worth offering']) {
+      assert.ok(KB[t.id].includes(h), `${t.id} missing "${h}"`);
+    }
+    assert.ok(!/[–—]/.test(KB[t.id]), `${t.id} contains a dash character`);
+  }
+});
