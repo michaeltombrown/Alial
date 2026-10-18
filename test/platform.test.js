@@ -119,7 +119,7 @@ test('worker: health endpoint reports the running version\'s features', async ()
   const res = await worker.fetch(new Request('https://alial.test/api/health'), env(), ctx());
   const body = await res.json();
   assert.strictEqual(res.status, 200);
-  assert.ok(body.ok && body.features.includes('in-line-review') && body.features.includes('knowledge-base'));
+  assert.ok(body.ok && body.features.includes('in-line-review') && body.features.includes('knowledge-base') && body.features.includes('tabbed-layout'));
 });
 
 test('worker: streams the analyses, the in-line review, and the summary as NDJSON', async () => {

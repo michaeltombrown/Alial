@@ -110,7 +110,7 @@ export default {
     if (pathname === '/api/config') return json(config(env));
     // Lets anyone confirm which version is live (for example after a deploy).
     if (pathname === '/api/health') {
-      return json({ ok: true, app: 'alial', features: ['knowledge-base', 'in-line-review', 'viewpoints', 'engine-summary', 'summary-retry', 'requirement-notes'] });
+      return json({ ok: true, app: 'alial', features: ['knowledge-base', 'in-line-review', 'viewpoints', 'engine-summary', 'summary-retry', 'requirement-notes', 'tabbed-layout'] });
     }
     if (pathname === '/api/analyze' || pathname === '/api/summarize') {
       if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405, { allow: 'POST' });
