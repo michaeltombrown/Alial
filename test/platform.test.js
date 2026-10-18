@@ -33,6 +33,7 @@ test('parses an Anthropic SSE stream, including events split across chunks', asy
     { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hel' } },
     { type: 'content_block_delta', delta: { type: 'text_delta', text: 'lo' } },
     { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
+    { type: 'message_stop' },
   ]);
   assert.strictEqual(await readTextStream(body), 'Hello');
 
@@ -314,4 +315,11 @@ test('pdf: the document has every section, the essay and context, page numbers, 
   assert.strictEqual(doc.content.filter((n) => n.pageBreak).length, 2, 'every section after the first starts a new page');
   assert.match(JSON.stringify(doc.footer(2, 9)), /Page 2 of 9/);
   assert.strictEqual(doc.pageSize, 'LETTER');
+});
+
+test('a stream that starts but never stops is retried as incomplete', async () => {
+  await assert.rejects(
+    readTextStream(sse([{ type: 'message_start' }, { type: 'content_block_delta', delta: { type: 'text_delta', text: 'half' } }])),
+    (e) => e.retryable === true && /before the response was complete/.test(e.message),
+  );
 });

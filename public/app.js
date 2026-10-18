@@ -163,6 +163,11 @@
     if (d.paragraphs) out.append(renderInline(d));
     else if (d.text) {
       out.append(render(d.text));
+      if (d.truncated) {
+        const cut = el('div', 'notice warn');
+        cut.append(el('strong', '', 'This summary was cut off. '), document.createTextNode('It reached the length limit before finishing. Choose a shorter summary length and submit again.'));
+        out.append(cut);
+      }
       if (d.unverifiedQuotes?.length) {
         const note = el('div', 'notice warn');
         note.append(el('strong', '', 'Check these quoted passages. '), document.createTextNode('They could not be matched to your essay, your context, or the reviews, so treat them with caution: '));
@@ -249,7 +254,7 @@
         state.data.inline = ev.status === 'done' ? { status: 'done', arc: ev.arc, paragraphs: ev.paragraphs, synthetic: ev.synthetic } : { status: 'failed', error: ev.error };
         break;
       case 'summary_start': state.data.summary = { status: 'running' }; break;
-      case 'summary': state.data.summary = { status: 'done', text: ev.text, unverifiedQuotes: ev.unverifiedQuotes || [] }; break;
+      case 'summary': state.data.summary = { status: 'done', text: ev.text, truncated: Boolean(ev.truncated), unverifiedQuotes: ev.unverifiedQuotes || [] }; break;
       case 'summary_error': state.data.summary = { status: 'failed', error: ev.error, retry: true }; break;
       case 'error':
         showError($('run-error'), ev.error);

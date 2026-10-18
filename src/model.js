@@ -7,18 +7,22 @@ const MAX_WAIT_MS = 30000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Reads an Anthropic Messages SSE stream and returns the concatenated text.
-export async function readTextStream(body) {
+export async function readTextStream(body, info = {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
   let text = '';
   let stopReason = null;
+  let started = false;
+  let stopped = false;
 
   const handle = (block) => {
     for (const line of block.split('\n')) {
       if (!line.startsWith('data:')) continue;
       const data = JSON.parse(line.slice(5).trim());
-      if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta') text += data.delta.text;
+      if (data.type === 'message_start') started = true;
+      else if (data.type === 'message_stop') stopped = true;
+      else if (data.type === 'content_block_delta' && data.delta?.type === 'text_delta') text += data.delta.text;
       else if (data.type === 'message_delta' && data.delta?.stop_reason) stopReason = data.delta.stop_reason;
       else if (data.type === 'error') {
         const err = new Error(`Anthropic stream error (${data.error?.type}): ${data.error?.message || 'unknown'}`);
@@ -39,6 +43,12 @@ export async function readTextStream(body) {
     }
   }
   if (buf.trim()) handle(buf);
+  if (started && !stopped) {
+    const err = new Error('Anthropic stream ended before the response was complete');
+    err.retryable = true;
+    throw err;
+  }
+  info.stopReason = stopReason;
   if (stopReason === 'max_tokens') console.warn('[alial] a response hit max_tokens and was truncated');
   return text;
 }
@@ -54,7 +64,7 @@ export function describeFailure(err) {
 // Returns async ({ system, user, signal, retries = 2 }) => string.
 // Retries rate limits and overloads, honoring Retry-After (capped), including overloads that arrive mid-stream.
 export function createCompleter({ apiKey, model = DEFAULT_MODEL, maxTokens = DEFAULT_MAX_TOKENS, fetchFn = fetch, sleepFn = sleep }) {
-  return async ({ system, user, signal, retries = 2 }) => {
+  return async ({ system, user, signal, retries = 2, maxTokens: callMax, onStop }) => {
     for (let attempt = 0; ; attempt++) {
       let retryAfter = 0;
       try {
@@ -62,9 +72,14 @@ export function createCompleter({ apiKey, model = DEFAULT_MODEL, maxTokens = DEF
           method: 'POST',
           signal,
           headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-          body: JSON.stringify({ model, max_tokens: maxTokens, stream: true, system, messages: [{ role: 'user', content: user }] }),
+          body: JSON.stringify({ model, max_tokens: callMax || maxTokens, stream: true, system, messages: [{ role: 'user', content: user }] }),
         });
-        if (res.ok) return await readTextStream(res.body);
+        if (res.ok) {
+          const info = {};
+          const text = await readTextStream(res.body, info);
+          onStop?.(info.stopReason);
+          return text;
+        }
         const detail = (await res.text()).slice(0, 300);
         const err = new Error(`Anthropic API ${res.status}: ${detail}`);
         err.retryable = RETRYABLE.has(res.status);

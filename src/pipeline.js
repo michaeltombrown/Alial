@@ -5,6 +5,7 @@ import { splitParagraphs, inlineMessage, parseInlineReview, missingParts } from 
 import { describeFailure } from './model.js';
 import { findUnverifiedQuotes } from './quotes.js';
 
+const SUMMARY_MAX_TOKENS = 32000; // the detailed report is long; the default cap cut it off
 const NO_PROMPT = 'Not supplied. Proceed with reasonable assumptions and state them.';
 
 function describeContext({ type, prompt, college, wordLimit, wordCount }) {
@@ -164,9 +165,17 @@ async function runInline({ complete, inline, input, paragraphs, synthetic, signa
 export async function runSummary({ complete, summarizer, reports, input, inline, emit = () => {}, signal }) {
   emit({ type: 'summary_start', reviewersUsed: reports.filter((r) => !r.error).length });
   try {
-    const text = await complete({ system: summarizer.system, user: summarizerMessage(reports, input.length, input, inline), signal, retries: 5 });
+    let truncated = false;
+    const text = await complete({
+      system: summarizer.system,
+      user: summarizerMessage(reports, input.length, input, inline),
+      signal,
+      retries: 5,
+      maxTokens: SUMMARY_MAX_TOKENS,
+      onStop: (reason) => { truncated = reason === 'max_tokens'; },
+    });
     const sources = [input.essay, input.prompt || '', ...reports.filter((r) => !r.error).map((r) => r.text), inlineForSummary(inline)];
-    emit({ type: 'summary', text, unverifiedQuotes: findUnverifiedQuotes(text, sources) });
+    emit({ type: 'summary', text, truncated, unverifiedQuotes: findUnverifiedQuotes(text, sources) });
     return text;
   } catch (err) {
     if (signal?.aborted) throw err;
