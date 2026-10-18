@@ -87,6 +87,8 @@ export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
     if (pathname === '/api/config') return json(config(env));
+    // Lets anyone confirm which version is live (for example after a deploy).
+    if (pathname === '/api/health') return json({ ok: true, app: 'alial', features: ['knowledge-base', 'in-line-review', 'viewpoints', 'engine-summary'] });
     if (pathname === '/api/analyze') {
       if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405, { allow: 'POST' });
       return analyze(request, env, ctx);

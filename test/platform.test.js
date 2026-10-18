@@ -84,6 +84,13 @@ test('worker: config, assets, and method handling', async () => {
   assert.strictEqual((await worker.fetch(new Request('https://alial.test/api/analyze'), env(), ctx())).status, 405);
 });
 
+test('worker: health endpoint reports the running version\'s features', async () => {
+  const res = await worker.fetch(new Request('https://alial.test/api/health'), env(), ctx());
+  const body = await res.json();
+  assert.strictEqual(res.status, 200);
+  assert.ok(body.ok && body.features.includes('in-line-review') && body.features.includes('knowledge-base'));
+});
+
 test('worker: streams the analyses, the in-line review, and the summary as NDJSON', async () => {
   const c = ctx();
   const res = await worker.fetch(post({ type: 'common-app', essay, length: 'detailed', prompt: 'Why Brown?' }), env(), c);
